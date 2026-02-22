@@ -1,0 +1,98 @@
+{
+  "slime": {
+	"display_name": "史萊姆",
+	"base_hp": 30,
+	"base_atk": 5,
+	"base_def": 0,
+	"move_speed": 40,
+	"atk_range": 30,
+	"atk_speed": 0.8,
+	"experience": 10,
+	"element": "physical",
+	"behavior": "chase"
+  },
+  "skeleton": {
+	"display_name": "骷髏",
+	"base_hp": 50,
+	"base_atk": 8,
+	"base_def": 2,
+	"move_speed": 50,
+	"atk_range": 40,
+	"atk_speed": 1.0,
+	"experience": 15,
+	"element": "physical",
+	"behavior": "chase"
+  },
+  "fire_imp": {
+	"display_name": "火焰小鬼",
+	"base_hp": 40,
+	"base_atk": 10,
+	"base_def": 0,
+	"move_speed": 60,
+	"atk_range": 100,
+	"atk_speed": 0.7,
+	"experience": 20,
+	"element": "fire",
+	"behavior": "ranged",
+	"projectile": true
+  },
+  "ice_elemental": {
+	"display_name": "冰元素",
+	"base_hp": 60,
+	"base_atk": 12,
+	"base_def": 5,
+	"move_speed": 30,
+	"atk_range": 80,
+	"atk_speed": 0.6,
+	"experience": 25,
+	"element": "ice",
+	"behavior": "ranged",
+	"projectile": true,
+	"resistances": {
+	  "ice": 0.5,
+	  "fire": -0.25
+	}
+  },
+  "lightning_wisp": {
+	"display_name": "閃電精靈",
+	"base_hp": 35,
+	"base_atk": 15,
+	"base_def": 0,
+	"move_speed": 80,
+	"atk_range": 60,
+	"atk_speed": 1.5,
+	"experience": 25,
+	"element": "lightning",
+	"behavior": "hit_and_run",
+	"resistances": {
+	  "lightning": 0.5
+	}
+  },
+  "golem": {
+	"display_name": "石魔像",
+	"base_hp": 150,
+	"base_atk": 20,
+	"base_def": 15,
+	"move_speed": 25,
+	"atk_range": 50,
+	"atk_speed": 0.5,
+	"experience": 50,
+	"element": "physical",
+	"behavior": "chase",
+	"is_elite": true
+  },
+  "abyss_watcher": {
+	"display_name": "深淵守望者",
+	"base_hp": 500,
+	"base_atk": 30,
+	"base_def": 10,
+	"move_speed": 40,
+	"atk_range": 60,
+	"atk_speed": 0.8,
+	"experience": 200,
+	"element": "physical",
+	"behavior": "boss",
+	"is_boss": true,
+	"abilities": ["charge", "slam", "summon"]
+  }
+}

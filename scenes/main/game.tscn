@@ -1,0 +1,48 @@
+[gd_scene load_steps=5 format=3 uid="uid://game001"]
+
+[ext_resource type="Script" path="res://scripts/main/game.gd" id="1_game"]
+[ext_resource type="Script" path="res://scripts/abyss/enemy_spawner.gd" id="2_spawner"]
+[ext_resource type="PackedScene" uid="uid://hud001" path="res://scenes/ui/hud/hud.tscn" id="3_hud"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_bounds"]
+size = Vector2(1280, 20)
+
+[node name="Game" type="Node2D"]
+script = ExtResource("1_game")
+
+[node name="Background" type="ColorRect" parent="."]
+offset_right = 1280.0
+offset_bottom = 720.0
+color = Color(0.1, 0.1, 0.15, 1)
+
+[node name="PlayerSpawn" type="Marker2D" parent="."]
+position = Vector2(640, 360)
+
+[node name="EnemySpawner" type="Node2D" parent="."]
+script = ExtResource("2_spawner")
+
+[node name="Bounds" type="StaticBody2D" parent="."]
+collision_layer = 4
+collision_mask = 0
+
+[node name="Top" type="CollisionShape2D" parent="Bounds"]
+position = Vector2(640, -10)
+shape = SubResource("RectangleShape2D_bounds")
+
+[node name="Bottom" type="CollisionShape2D" parent="Bounds"]
+position = Vector2(640, 730)
+shape = SubResource("RectangleShape2D_bounds")
+
+[node name="Left" type="CollisionShape2D" parent="Bounds"]
+position = Vector2(-10, 360)
+rotation = 1.5708
+shape = SubResource("RectangleShape2D_bounds")
+
+[node name="Right" type="CollisionShape2D" parent="Bounds"]
+position = Vector2(1290, 360)
+rotation = 1.5708
+shape = SubResource("RectangleShape2D_bounds")
+
+[node name="UILayer" type="CanvasLayer" parent="."]
+
+[node name="HUD" parent="UILayer" instance=ExtResource("3_hud")]

@@ -1,0 +1,25 @@
+# Godot editor/cache
+.godot/
+
+# Godot export preset secrets (contains local paths/signing info)
+export_presets.cfg
+
+# Godot C# / Mono build outputs
+.mono/
+bin/
+obj/
+
+# Android export/build output
+/android/
+
+# iOS export/build output
+/ios/
+
+# Local editor/IDE settings
+.idea/
+.vscode/
+*.code-workspace
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,101 @@
+{
+  "slash": {
+	"display_name": "揮砍",
+	"description": "近距離扇形攻擊，命中前方多個敵人",
+	"weapon_restrictions": ["sword"],
+	"tags": ["melee", "aoe"],
+	"base_damage_multiplier": 1.0,
+	"base_range": 60,
+	"is_starter": true
+  },
+  "whirlwind": {
+	"display_name": "旋風斬",
+	"description": "以自身為中心 360 度旋轉攻擊",
+	"weapon_restrictions": ["sword"],
+	"tags": ["melee", "aoe"],
+	"base_damage_multiplier": 0.8,
+	"base_range": 80,
+	"is_starter": false
+  },
+  "stab": {
+	"display_name": "刺擊",
+	"description": "快速單體刺擊",
+	"weapon_restrictions": ["dagger"],
+	"tags": ["melee", "fast"],
+	"base_damage_multiplier": 0.9,
+	"base_range": 40,
+	"is_starter": true
+  },
+  "flurry": {
+	"display_name": "連環刺",
+	"description": "極速連續刺擊 3 下，每下獨立觸發狀態",
+	"weapon_restrictions": ["dagger"],
+	"tags": ["melee", "fast"],
+	"base_damage_multiplier": 0.6,
+	"hit_count": 3,
+	"base_range": 40,
+	"is_starter": false
+  },
+  "shadow_strike": {
+	"display_name": "暗影突襲",
+	"description": "瞬移到最近敵人身後進行高傷害單體攻擊",
+	"weapon_restrictions": ["dagger"],
+	"tags": ["melee", "fast"],
+	"base_damage_multiplier": 1.5,
+	"base_range": 150,
+	"is_starter": false
+  },
+  "shoot": {
+	"display_name": "射擊",
+	"description": "發射單一箭矢",
+	"weapon_restrictions": ["bow"],
+	"tags": ["ranged", "projectile"],
+	"base_damage_multiplier": 1.0,
+	"projectile_speed": 400,
+	"base_range": 300,
+	"is_starter": true
+  },
+  "arrow_rain": {
+	"display_name": "箭雨",
+	"description": "對目標區域降下大量箭矢",
+	"weapon_restrictions": ["bow"],
+	"tags": ["ranged", "projectile", "aoe"],
+	"base_damage_multiplier": 0.7,
+	"arrow_count": 8,
+	"explosion_radius": 90,
+	"base_range": 250,
+	"is_starter": false
+  },
+  "piercing_shot": {
+	"display_name": "貫穿射擊",
+	"description": "發射一發高傷害箭矢，預設穿透所有敵人",
+	"weapon_restrictions": ["bow"],
+	"tags": ["ranged", "projectile"],
+	"base_damage_multiplier": 1.8,
+	"pierce_count": 999,
+	"projectile_speed": 500,
+	"base_range": 400,
+	"is_starter": false
+  },
+  "magic_bolt": {
+	"display_name": "魔法彈",
+	"description": "發射追蹤魔法彈",
+	"weapon_restrictions": ["wand"],
+	"tags": ["ranged", "projectile", "tracking"],
+	"base_damage_multiplier": 1.0,
+	"projectile_speed": 300,
+	"base_range": 350,
+	"is_starter": true
+  },
+  "destruction_orb": {
+	"display_name": "毀滅之球",
+	"description": "蓄力發射大型能量球，高傷害、慢速、範圍爆炸",
+	"weapon_restrictions": ["wand"],
+	"tags": ["ranged", "projectile", "aoe", "heavy"],
+	"base_damage_multiplier": 2.5,
+	"projectile_speed": 150,
+	"explosion_radius": 80,
+	"base_range": 300,
+	"is_starter": false
+  }
+}
