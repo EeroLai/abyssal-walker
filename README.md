@@ -17,8 +17,6 @@
   <img src="docs/images/screenshot-crafting.png" alt="Crafting" width="31%" />
 </p>
 
-素材請放在 `docs/images/`（或自行修改本 README 的路徑）。
-
 ## 專案結構
 
 - `scenes/main/game.tscn`：主場景
