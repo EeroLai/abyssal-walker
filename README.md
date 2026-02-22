@@ -1,5 +1,7 @@
 # abyssal-walker
 
+[English](README.md) | [繁體中文](README.zh-TW.md)
+
 `abyssal-walker` is a 2D Action RPG prototype built with Godot 4.
 
 This project focuses on fast combat, abyss floor progression, and build crafting through loot, affixes, gems, and modules.
