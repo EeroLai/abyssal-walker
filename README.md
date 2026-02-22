@@ -1,15 +1,16 @@
 # abyssal-walker
 
-《abyssal-walker》是一個使用 Godot 4 製作的 2D 動作 RPG 原型專案。  
-目前聚焦在深淵推層、戰鬥、掉寶、裝備詞綴、技能與支援連結、模組配置，以及 Crafting 系統。
+`abyssal-walker` is a 2D Action RPG prototype built with Godot 4.
 
-## 遊玩預覽
+This project focuses on fast combat, abyss floor progression, and build crafting through loot, affixes, gems, and modules.
+
+## Gameplay Preview
 
 <p align="center">
   <img src="docs/images/gameplay-main.gif" alt="Main Gameplay" width="860" />
 </p>
 
-## 截圖
+## Screenshots
 
 <p align="center">
   <img src="docs/images/screenshot-combat.png" alt="Combat" width="31%" />
@@ -17,18 +18,64 @@
   <img src="docs/images/screenshot-crafting.png" alt="Crafting" width="31%" />
 </p>
 
-## 專案結構
+## Game Overview
 
-- `scenes/main/game.tscn`：主場景
-- `scripts/main`：遊戲主流程
-- `scripts/entities`：玩家、敵人、投射物
-- `scripts/core`：數值、裝備、寶石、模組、狀態、Crafting、掉寶
-- `scripts/ui`：HUD 與系統面板
-- `scripts/autoload`：全域管理器
-- `data/*.json`：資料驅動內容
+You control an auto-attacking hero that pushes deeper floors in the abyss.
+Each run is about:
 
-## 快速開始
+1. Clearing enemies and floor objectives
+2. Picking up loot and upgrade resources
+3. Improving your build through equipment, gems, modules, and crafting
+4. Pushing further, or farming selected floors when progress stalls
 
-1. 安裝 Godot 4.x
-2. 用 Godot 開啟此資料夾
-3. 執行 `scenes/main/game.tscn`
+## Core Features
+
+- Abyss progression with floor objectives and boss milestone floors
+- Push/Farm/Retry flow when a floor fails repeatedly
+- Data-driven enemy, item, affix, gem, module, and floor configs (`data/*.json`)
+- Equipment system with rarity, prefix/suffix affixes, and inventory management
+- Skill Gem + Support Gem link system with modifiers (projectiles, chain, pierce, area, etc.)
+- Module board system with load cost and stat-oriented build choices
+- Crafting materials and item crafting actions (`alter`, `augment`, `refine`)
+- Status effects (`burn`, `freeze`, `shock`, `bleed`) and combat feedback
+- HUD with DPS, kills, loot filter, progression status, and pickup feed
+
+## Current Content Snapshot
+
+- Main playable scene: `scenes/main/game.tscn`
+- Systems:
+  - Combat, projectiles, melee/ranged skill handling
+  - Enemy spawning and wave/floor loop
+  - Loot drop and pickup
+  - Equipment panel
+  - Skill link panel
+  - Crafting panel
+  - Module panel
+
+## Controls
+
+- `I`: Equipment panel
+- `K`: Skill Link panel
+- `C`: Crafting panel
+- `M`: Module panel
+- `Z`: Pickup nearby items
+- `L`: Cycle loot filter
+- `-` / `=`: Decrease/Increase current farm floor
+- `N`: Challenge pending failed floor
+- `Esc` (pause action): Pause/Resume
+
+## Project Structure
+
+- `scenes/main/game.tscn`: main scene
+- `scripts/main`: game flow and floor progression
+- `scripts/entities`: player, enemy, projectile logic
+- `scripts/core`: stats, equipment, gems, modules, status, crafting, loot
+- `scripts/ui`: HUD and system panels
+- `scripts/autoload`: global managers and event flow
+- `data/*.json`: data-driven game content
+
+## Quick Start
+
+1. Install Godot 4.x
+2. Open this folder as a Godot project
+3. Run `scenes/main/game.tscn`
