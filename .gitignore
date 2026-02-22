@@ -19,6 +19,7 @@ obj/
 .idea/
 .vscode/
 *.code-workspace
+.claude/
 
 # OS files
 .DS_Store
