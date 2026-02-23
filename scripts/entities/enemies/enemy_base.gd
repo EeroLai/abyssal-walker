@@ -134,8 +134,7 @@ func take_damage(damage_result: DamageCalculator.DamageResult, attacker: Node) -
 	if _is_dead:
 		return
 
-	# 簡化的受傷計算（敵人用簡單的防禦公式）
-	var total_damage := damage_result.total_damage
+	# 分通道承傷：物理吃防禦，元素吃各自抗性。
 	var attacker_stats: StatContainer = _extract_attacker_stats(attacker)
 	var armor_shred: float = 0.0
 	var phys_pen: float = 0.0
@@ -147,16 +146,22 @@ func take_damage(damage_result: DamageCalculator.DamageResult, attacker: Node) -
 		element_pen = clampf(attacker_stats.get_stat(StatTypes.Stat.ELEMENTAL_PEN), 0.0, 0.95)
 		res_shred = clampf(attacker_stats.get_stat(StatTypes.Stat.RES_SHRED), 0.0, 0.95)
 
-	# 應用抗性
-	total_damage -= damage_result.fire_damage * _get_effective_resistance("fire", element_pen, res_shred)
-	total_damage -= damage_result.ice_damage * _get_effective_resistance("ice", element_pen, res_shred)
-	total_damage -= damage_result.lightning_damage * _get_effective_resistance("lightning", element_pen, res_shred)
-
-	# 應用防禦
+	# 物理只套防禦與物理穿透。
+	var physical_damage := maxf(damage_result.physical_damage, 0.0)
 	var effective_def: float = maxf(base_def - armor_shred, 0.0)
 	var def_reduction := effective_def / (effective_def + 50.0)
 	def_reduction *= (1.0 - phys_pen)
-	total_damage *= (1.0 - def_reduction)
+	physical_damage *= (1.0 - def_reduction)
+
+	# 元素只套抗性與元素穿透。
+	var fire_damage := maxf(damage_result.fire_damage, 0.0)
+	fire_damage *= (1.0 - _get_effective_resistance("fire", element_pen, res_shred))
+	var ice_damage := maxf(damage_result.ice_damage, 0.0)
+	ice_damage *= (1.0 - _get_effective_resistance("ice", element_pen, res_shred))
+	var lightning_damage := maxf(damage_result.lightning_damage, 0.0)
+	lightning_damage *= (1.0 - _get_effective_resistance("lightning", element_pen, res_shred))
+
+	var total_damage := physical_damage + fire_damage + ice_damage + lightning_damage
 	if status_controller:
 		total_damage *= status_controller.get_damage_taken_multiplier()
 
