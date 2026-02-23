@@ -17,6 +17,9 @@ extends Resource
 @export var chain_count: int = 0
 @export var hit_count: int = 1
 @export var arrow_count: int = 1
+@export var conversion_element: StatTypes.Element = StatTypes.Element.PHYSICAL
+@export var conversion_ratio: float = 0.0
+@export var element_status_chance_bonus: float = 0.0
 
 @export var level: int = 1
 @export var experience: float = 0.0
@@ -96,6 +99,10 @@ func get_tooltip() -> String:
 		lines.append("穿透目標: %d" % pierce_count)
 	if chain_count > 0:
 		lines.append("連鎖次數: %d" % chain_count)
+	if conversion_ratio > 0.0 and conversion_element != StatTypes.Element.PHYSICAL:
+		lines.append("物理轉換: %.0f%% -> %s" % [clampf(conversion_ratio, 0.0, 1.0) * 100.0, _get_element_name(conversion_element)])
+	if element_status_chance_bonus > 0.0:
+		lines.append("元素異常機率: +%.1f%%" % (element_status_chance_bonus * 100.0))
 
 	if not weapon_restrictions.is_empty():
 		var weapons: Array[String] = []
@@ -131,3 +138,21 @@ func _get_tag_name(tag: StatTypes.SkillTag) -> String:
 		StatTypes.SkillTag.HEAVY: return "重擊"
 		StatTypes.SkillTag.TRACKING: return "追蹤"
 		_: return "未知"
+
+
+func _get_element_name(element: StatTypes.Element) -> String:
+	match element:
+		StatTypes.Element.PHYSICAL: return "物理"
+		StatTypes.Element.FIRE: return "火焰"
+		StatTypes.Element.ICE: return "冰霜"
+		StatTypes.Element.LIGHTNING: return "閃電"
+		_: return "未知"
+
+
+func get_status_chance_bonus_for(status_type: String) -> float:
+	if element_status_chance_bonus <= 0.0:
+		return 0.0
+	var mapped: String = StatTypes.ELEMENT_STATUS.get(conversion_element, "")
+	if mapped == status_type:
+		return element_status_chance_bonus
+	return 0.0

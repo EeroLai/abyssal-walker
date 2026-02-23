@@ -24,7 +24,8 @@ class DamageResult:
 static func calculate_attack_damage(
 	attacker_stats: StatContainer,
 	skill_multiplier: float,
-	support_modifiers: Dictionary
+	support_modifiers: Dictionary,
+	skill_gem: SkillGem = null
 ) -> DamageResult:
 	var result := DamageResult.new()
 
@@ -33,6 +34,7 @@ static func calculate_attack_damage(
 
 	# 應用轉傷
 	var damage_split := _apply_conversion(attacker_stats, base_damage)
+	_apply_skill_conversion(damage_split, skill_gem)
 
 	# 第二層：技能倍率
 	var skill_mult: float = skill_multiplier
@@ -176,6 +178,24 @@ static func _apply_conversion(stats: StatContainer, base_damage: float) -> Dicti
 	result[StatTypes.Element.ICE] -= ice_converted
 
 	return result
+
+
+static func _apply_skill_conversion(damage_split: Dictionary, skill_gem: SkillGem) -> void:
+	if skill_gem == null:
+		return
+	if skill_gem.conversion_ratio <= 0.0:
+		return
+	if skill_gem.conversion_element == StatTypes.Element.PHYSICAL:
+		return
+
+	var ratio := clampf(skill_gem.conversion_ratio, 0.0, 1.0)
+	var physical := float(damage_split.get(StatTypes.Element.PHYSICAL, 0.0))
+	if physical <= 0.0:
+		return
+
+	var converted := physical * ratio
+	damage_split[StatTypes.Element.PHYSICAL] = physical - converted
+	damage_split[skill_gem.conversion_element] = float(damage_split.get(skill_gem.conversion_element, 0.0)) + converted
 
 
 ## 獲取元素傷害加成

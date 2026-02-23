@@ -166,7 +166,7 @@ func take_damage(damage_result: DamageCalculator.DamageResult, attacker: Node) -
 		_apply_thorns(attacker, total_damage)
 
 	# 顯示傷害數字
-	_spawn_damage_number(total_damage, damage_result.is_crit, attacker)
+	_spawn_damage_number(total_damage, damage_result, attacker)
 
 	# 受擊反饋
 	_on_hit()
@@ -183,16 +183,37 @@ func apply_status_damage(amount: float, element: StatTypes.Element) -> void:
 		_die()
 
 
-func _spawn_damage_number(damage: float, is_crit: bool, source: Node) -> void:
+func _spawn_damage_number(damage: float, damage_result: DamageCalculator.DamageResult, source: Node) -> void:
 	# 發送事件，讓 UI 系統處理
+	var display_element := _get_primary_damage_element(damage_result)
 	var damage_info: Dictionary = {
 		"damage": damage,
 		"final_damage": damage,
-		"is_crit": is_crit,
+		"is_crit": damage_result.is_crit,
 		"position": global_position + Vector2(0, -20),
-		"element": element,
+		"element": display_element,
 	}
 	EventBus.damage_dealt.emit(source, self, damage_info)
+
+
+func _get_primary_damage_element(damage_result: DamageCalculator.DamageResult) -> StatTypes.Element:
+	var physical := maxf(damage_result.physical_damage, 0.0)
+	var fire := maxf(damage_result.fire_damage, 0.0)
+	var ice := maxf(damage_result.ice_damage, 0.0)
+	var lightning := maxf(damage_result.lightning_damage, 0.0)
+
+	var max_value := physical
+	var result := StatTypes.Element.PHYSICAL
+	if fire > max_value:
+		max_value = fire
+		result = StatTypes.Element.FIRE
+	if ice > max_value:
+		max_value = ice
+		result = StatTypes.Element.ICE
+	if lightning > max_value:
+		result = StatTypes.Element.LIGHTNING
+
+	return result
 
 
 func _on_hit() -> void:

@@ -145,5 +145,47 @@
 	  "damage_multiplier": 2.0
 	},
 	"is_starter": false
+  },
+  "pierce_chain": {
+	"display_name": "穿透連鎖",
+	"description": "投射物獲得穿透與連鎖，但單次傷害下降。",
+	"tag_restrictions": ["projectile"],
+	"modifiers": {
+	  "pierce_count": 1,
+	  "chain_count": 1,
+	  "damage_multiplier": 0.85
+	},
+	"is_starter": false
+  },
+  "status_area": {
+	"display_name": "異常擴散",
+	"description": "提高異常機率，並擴大範圍。",
+	"tag_restrictions": ["aoe"],
+	"modifiers": {
+	  "status_chance_bonus": 0.22,
+	  "area_multiplier": 1.2
+	},
+	"is_starter": false
+  },
+  "knockback_damage": {
+	"display_name": "擊退增傷",
+	"description": "近戰命中強力擊退，並附帶小幅傷害加成。",
+	"tag_restrictions": ["melee"],
+	"modifiers": {
+	  "knockback_force": 170,
+	  "damage_multiplier": 1.12
+	},
+	"is_starter": false
+  },
+  "speed_area": {
+	"display_name": "加速擴散",
+	"description": "提升攻擊節奏與範圍，但單次傷害降低。",
+	"tag_restrictions": [],
+	"modifiers": {
+	  "speed_multiplier": 1.18,
+	  "area_multiplier": 1.18,
+	  "damage_multiplier": 0.86
+	},
+	"is_starter": true
   }
 }

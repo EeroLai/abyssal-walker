@@ -8,6 +8,7 @@ const PROJECTILE_SCENE := preload("res://scenes/entities/projectile.tscn")
 const MELEE_EFFECT_SCENE := preload("res://scenes/effects/melee_effect.tscn")
 const ARROW_RAIN_EFFECT_SCENE := preload("res://scenes/effects/arrow_rain_effect.tscn")
 const SHADOW_STRIKE_OFFSET := 28.0
+const STAB_FINISHER_MULTIPLIER := 1.6
 
 @export var pickup_range: float = 50.0
 @export var virtual_wall_margin: float = 80.0
@@ -582,13 +583,13 @@ func _perform_attack() -> void:
 		if skill.id == "arrow_rain":
 			_apply_arrow_rain(skill_mult, support_mods)
 			return
-		var ranged_damage := DamageCalculator.calculate_attack_damage(stats, skill_mult, support_mods)
+		var ranged_damage := DamageCalculator.calculate_attack_damage(stats, skill_mult, support_mods, skill)
 		_launch_projectile(ranged_damage, support_mods)
 	else:
-		if skill.id == "flurry":
+		if skill.hit_count > 1:
 			_apply_flurry_hit(skill_mult, support_mods)
 			return
-		var melee_damage := DamageCalculator.calculate_attack_damage(stats, skill_mult, support_mods)
+		var melee_damage := DamageCalculator.calculate_attack_damage(stats, skill_mult, support_mods, skill)
 		_apply_melee_hit(melee_damage, support_mods)
 
 
@@ -665,7 +666,11 @@ func _apply_flurry_hit(skill_mult: float, support_mods: Dictionary) -> void:
 		return
 	var hit_count := maxi(1, skill.hit_count)
 	for i in range(hit_count):
-		var damage_result := DamageCalculator.calculate_attack_damage(stats, skill_mult, support_mods)
+		var per_hit_mult := skill_mult
+		# Stab's second strike is a finisher to improve single-target burst identity.
+		if skill.id == "stab" and i == hit_count - 1:
+			per_hit_mult *= STAB_FINISHER_MULTIPLIER
+		var damage_result := DamageCalculator.calculate_attack_damage(stats, per_hit_mult, support_mods, skill)
 		_apply_melee_hit(damage_result, support_mods, i == 0)
 
 
@@ -695,7 +700,7 @@ func _apply_arrow_rain(skill_mult: float, support_mods: Dictionary) -> void:
 		var target: Node2D = targets[randi() % targets.size()]
 		if target == null or not is_instance_valid(target):
 			continue
-		var damage_result := DamageCalculator.calculate_attack_damage(stats, skill_mult, support_mods)
+		var damage_result := DamageCalculator.calculate_attack_damage(stats, skill_mult, support_mods, skill)
 		if target.has_method("take_damage"):
 			target.take_damage(damage_result, self)
 			_try_apply_status_on_hit(target, damage_result, support_mods)
@@ -990,17 +995,17 @@ func _try_apply_status_on_hit(
 	if target_status == null:
 		return
 
-	var bonus: float = support_mods.get("status_chance_bonus", 0.0)
+	var support_bonus: float = support_mods.get("status_chance_bonus", 0.0)
 	var total: float = maxf(damage_result.total_damage, 1.0)
 
 	if damage_result.fire_damage > 0.0:
-		_try_apply("burn", Constants.BURN_BASE_CHANCE, StatTypes.Stat.BURN_CHANCE, bonus, damage_result.fire_damage, total, target_status)
+		_try_apply("burn", Constants.BURN_BASE_CHANCE, StatTypes.Stat.BURN_CHANCE, support_bonus + _get_skill_status_bonus("burn"), damage_result.fire_damage, total, target_status)
 	if damage_result.ice_damage > 0.0:
-		_try_apply("freeze", Constants.FREEZE_BASE_CHANCE, StatTypes.Stat.FREEZE_CHANCE, bonus, damage_result.ice_damage, total, target_status)
+		_try_apply("freeze", Constants.FREEZE_BASE_CHANCE, StatTypes.Stat.FREEZE_CHANCE, support_bonus + _get_skill_status_bonus("freeze"), damage_result.ice_damage, total, target_status)
 	if damage_result.lightning_damage > 0.0:
-		_try_apply("shock", Constants.SHOCK_BASE_CHANCE, StatTypes.Stat.SHOCK_CHANCE, bonus, damage_result.lightning_damage, total, target_status)
+		_try_apply("shock", Constants.SHOCK_BASE_CHANCE, StatTypes.Stat.SHOCK_CHANCE, support_bonus + _get_skill_status_bonus("shock"), damage_result.lightning_damage, total, target_status)
 	if damage_result.physical_damage > 0.0:
-		_try_apply("bleed", Constants.BLEED_BASE_CHANCE, StatTypes.Stat.BLEED_CHANCE, bonus, damage_result.physical_damage, total, target_status)
+		_try_apply("bleed", Constants.BLEED_BASE_CHANCE, StatTypes.Stat.BLEED_CHANCE, support_bonus + _get_skill_status_bonus("bleed"), damage_result.physical_damage, total, target_status)
 
 
 func _try_apply(
@@ -1027,6 +1032,12 @@ func _try_apply_knockback_on_hit(target: Node, support_mods: Dictionary) -> void
 	if force <= 0.0:
 		return
 	target.apply_knockback(global_position, force)
+
+
+func _get_skill_status_bonus(status_type: String) -> float:
+	if gem_link == null or gem_link.skill_gem == null:
+		return 0.0
+	return gem_link.skill_gem.get_status_chance_bonus_for(status_type)
 
 
 func get_status_controller() -> StatusController:

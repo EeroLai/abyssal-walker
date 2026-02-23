@@ -213,6 +213,9 @@ func create_skill_gem(id: String) -> SkillGem:
 	gem.chain_count = int(data.get("chain_count", 0))
 	gem.hit_count = maxi(1, int(data.get("hit_count", 1)))
 	gem.arrow_count = maxi(1, int(data.get("arrow_count", 1)))
+	gem.conversion_element = _element_from_string(str(data.get("conversion_element", "physical")))
+	gem.conversion_ratio = clampf(float(data.get("conversion_ratio", 0.0)), 0.0, 1.0)
+	gem.element_status_chance_bonus = maxf(float(data.get("element_status_chance_bonus", 0.0)), 0.0)
 	gem.weapon_restrictions = _parse_weapon_restrictions(data.get("weapon_restrictions", []))
 	gem.tags = _parse_skill_tags(data.get("tags", []))
 	return gem
@@ -269,6 +272,15 @@ func _skill_tag_from_string(value: String) -> int:
 		"heavy": return StatTypes.SkillTag.HEAVY
 		"tracking": return StatTypes.SkillTag.TRACKING
 		_: return -1
+
+
+func _element_from_string(value: String) -> StatTypes.Element:
+	match value.to_lower():
+		"physical": return StatTypes.Element.PHYSICAL
+		"fire": return StatTypes.Element.FIRE
+		"ice": return StatTypes.Element.ICE
+		"lightning": return StatTypes.Element.LIGHTNING
+		_: return StatTypes.Element.PHYSICAL
 
 
 func get_enemy(id: String) -> Dictionary:
