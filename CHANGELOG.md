@@ -11,6 +11,18 @@ This format is based on Keep a Changelog and uses simple sections:
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+### Balance
+
+## [1.1.0] - 2026-02-24
+
+Release notes: `docs/releases/v1.1.0.md`
+
+### Added
 - Skill tag support for `chain`, and a new beam skill: `Arc Lightning`.
 - Enemy ranged attack flow with enemy projectile logic.
 - Debug convenience: start with all skill gems and extra white-quality backup weapons.
