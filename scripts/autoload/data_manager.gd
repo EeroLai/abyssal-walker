@@ -205,6 +205,7 @@ func create_skill_gem(id: String) -> SkillGem:
 	gem.display_name = data.get("display_name", id)
 	gem.description = data.get("description", "")
 	gem.base_damage_multiplier = float(data.get("base_damage_multiplier", 1.0))
+	gem.attack_speed_multiplier = maxf(float(data.get("attack_speed_multiplier", 1.0)), 0.1)
 	gem.base_range = float(data.get("base_range", 50.0))
 	gem.base_cooldown = float(data.get("base_cooldown", 0.0))
 	gem.projectile_speed = float(data.get("projectile_speed", 450.0))
@@ -271,6 +272,7 @@ func _skill_tag_from_string(value: String) -> int:
 		"fast": return StatTypes.SkillTag.FAST
 		"heavy": return StatTypes.SkillTag.HEAVY
 		"tracking": return StatTypes.SkillTag.TRACKING
+		"chain": return StatTypes.SkillTag.CHAIN
 		_: return -1
 
 

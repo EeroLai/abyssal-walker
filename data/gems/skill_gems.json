@@ -23,6 +23,7 @@
 	"weapon_restrictions": ["dagger"],
 	"tags": ["melee", "fast"],
 	"base_damage_multiplier": 1.2,
+	"attack_speed_multiplier": 1.6,
 	"hit_count": 2,
 	"base_range": 50,
 	"is_starter": true
@@ -33,6 +34,7 @@
 	"weapon_restrictions": ["dagger"],
 	"tags": ["melee", "fast"],
 	"base_damage_multiplier": 0.6,
+	"attack_speed_multiplier": 1.5,
 	"hit_count": 3,
 	"base_range": 40,
 	"is_starter": false
@@ -42,7 +44,8 @@
 	"description": "瞬移到最近敵人身後進行高傷害單體攻擊",
 	"weapon_restrictions": ["dagger"],
 	"tags": ["melee", "fast"],
-	"base_damage_multiplier": 1.5,
+	"base_damage_multiplier": 1.9,
+	"attack_speed_multiplier": 1.35,
 	"base_range": 150,
 	"is_starter": false
   },
@@ -87,6 +90,21 @@
 	"projectile_speed": 300,
 	"base_range": 350,
 	"is_starter": true
+  },
+  "arc_lightning": {
+	"display_name": "電弧",
+	"description": "釋放連鎖電弧，至少連鎖 5 名敵人。每個未被使用的連鎖次數轉為 5% more 傷害。",
+	"weapon_restrictions": ["wand"],
+	"tags": ["ranged", "chain"],
+	"base_damage_multiplier": 1.0,
+	"attack_speed_multiplier": 1.15,
+	"projectile_speed": 380,
+	"chain_count": 5,
+	"base_range": 340,
+	"conversion_element": "lightning",
+	"conversion_ratio": 1.0,
+	"element_status_chance_bonus": 0.2,
+	"is_starter": false
   },
   "destruction_orb": {
 	"display_name": "毀滅之球",

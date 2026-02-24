@@ -146,4 +146,5 @@ func _get_tag_name(tag: StatTypes.SkillTag) -> String:
 		StatTypes.SkillTag.FAST: return "快速"
 		StatTypes.SkillTag.HEAVY: return "重擊"
 		StatTypes.SkillTag.TRACKING: return "追蹤"
+		StatTypes.SkillTag.CHAIN: return "連鎖"
 		_: return "未知"

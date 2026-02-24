@@ -1,6 +1,9 @@
 class_name DamageCalculator
 extends RefCounted
 
+const ENABLE_DAMAGE_VARIANCE := true
+const DAMAGE_VARIANCE_PCT := 0.08
+
 ## 傷害計算結果
 class DamageResult:
 	var physical_damage: float = 0.0
@@ -52,8 +55,11 @@ static func calculate_attack_damage(
 
 	var final_dmg_bonus: float = attacker_stats.get_stat(StatTypes.Stat.FINAL_DMG)
 	var final_multiplier: float = 1.0 + maxf(final_dmg_bonus, 0.0)
+	var hit_variance := 1.0
+	if ENABLE_DAMAGE_VARIANCE:
+		hit_variance = _roll_damage_variance_multiplier()
 	for element in damage_split.keys():
-		damage_split[element] = float(damage_split[element]) * final_multiplier
+		damage_split[element] = float(damage_split[element]) * final_multiplier * hit_variance
 
 	# 分配傷害
 	result.physical_damage = damage_split.get(StatTypes.Element.PHYSICAL, 0.0)
@@ -209,6 +215,11 @@ static func _get_element_bonus(stats: StatContainer, element: StatTypes.Element)
 		_: return 0.0
 
 	return stats.get_stat(stat_type)
+
+
+static func _roll_damage_variance_multiplier() -> float:
+	var variance := maxf(DAMAGE_VARIANCE_PCT, 0.0)
+	return randf_range(1.0 - variance, 1.0 + variance)
 
 
 ## 計算期望 DPS

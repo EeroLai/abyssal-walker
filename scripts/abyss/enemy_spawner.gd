@@ -125,6 +125,8 @@ func _create_enemy(enemy_type: String) -> EnemyBase:
 	enemy.is_elite = enemy_data.get("is_elite", false)
 	enemy.is_boss = enemy_data.get("is_boss", false)
 	enemy.behavior = str(enemy_data.get("behavior", "chase"))
+	enemy.uses_projectile = bool(enemy_data.get("projectile", false))
+	enemy.projectile_speed = float(enemy_data.get("projectile_speed", 320.0))
 
 	# 設定元素
 	var element_str: String = enemy_data.get("element", "physical")

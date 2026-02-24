@@ -49,7 +49,7 @@
 	"behavior": "ranged",
 	"projectile": true,
 	"resistances": {
-	  "ice": 0.5,
+	  "ice": 0.3,
 	  "fire": -0.25
 	}
   },
@@ -65,7 +65,7 @@
 	"element": "lightning",
 	"behavior": "hit_and_run",
 	"resistances": {
-	  "lightning": 0.5
+	  "lightning": 0.3
 	}
   },
   "golem": {
