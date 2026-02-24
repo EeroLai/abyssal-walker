@@ -108,6 +108,7 @@ enum SkillTag {
 	FAST,
 	HEAVY,
 	TRACKING,
+	CHAIN,
 }
 
 enum AffixType {

@@ -176,9 +176,6 @@ func _is_melee_build() -> bool:
 
 func _get_ai_attack_range() -> float:
 	var base_range := player.get_attack_range()
-	if _is_melee_build():
-		# 近戰用更實際的貼身判定，避免停在太遠打不到。
-		return minf(base_range, 48.0)
 	return base_range
 
 

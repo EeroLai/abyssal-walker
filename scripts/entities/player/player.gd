@@ -8,6 +8,9 @@ const PROJECTILE_SCENE := preload("res://scenes/entities/projectile.tscn")
 const MELEE_EFFECT_SCENE := preload("res://scenes/effects/melee_effect.tscn")
 const ARROW_RAIN_EFFECT_SCENE := preload("res://scenes/effects/arrow_rain_effect.tscn")
 const SHADOW_STRIKE_OFFSET := 28.0
+const STAB_FINISHER_MULTIPLIER := 1.6
+const ARC_CHAIN_SEARCH_RADIUS := 240.0
+const ARC_UNUSED_CHAIN_MORE_PER_STACK := 0.05
 
 @export var pickup_range: float = 50.0
 @export var virtual_wall_margin: float = 80.0
@@ -126,7 +129,10 @@ func get_move_speed() -> float:
 
 
 func get_attack_speed() -> float:
-	return stats.get_stat(StatTypes.Stat.ATK_SPEED)
+	var atk_speed := stats.get_stat(StatTypes.Stat.ATK_SPEED)
+	if gem_link and gem_link.skill_gem:
+		atk_speed *= gem_link.skill_gem.get_attack_speed_multiplier()
+	return atk_speed
 
 
 func get_attack_range() -> float:
@@ -582,13 +588,16 @@ func _perform_attack() -> void:
 		if skill.id == "arrow_rain":
 			_apply_arrow_rain(skill_mult, support_mods)
 			return
-		var ranged_damage := DamageCalculator.calculate_attack_damage(stats, skill_mult, support_mods)
+		var ranged_damage := DamageCalculator.calculate_attack_damage(stats, skill_mult, support_mods, skill)
+		if skill.id == "arc_lightning":
+			_cast_arc_lightning(ranged_damage, support_mods)
+			return
 		_launch_projectile(ranged_damage, support_mods)
 	else:
-		if skill.id == "flurry":
+		if skill.hit_count > 1:
 			_apply_flurry_hit(skill_mult, support_mods)
 			return
-		var melee_damage := DamageCalculator.calculate_attack_damage(stats, skill_mult, support_mods)
+		var melee_damage := DamageCalculator.calculate_attack_damage(stats, skill_mult, support_mods, skill)
 		_apply_melee_hit(melee_damage, support_mods)
 
 
@@ -665,7 +674,11 @@ func _apply_flurry_hit(skill_mult: float, support_mods: Dictionary) -> void:
 		return
 	var hit_count := maxi(1, skill.hit_count)
 	for i in range(hit_count):
-		var damage_result := DamageCalculator.calculate_attack_damage(stats, skill_mult, support_mods)
+		var per_hit_mult := skill_mult
+		# Stab's second strike is a finisher to improve single-target burst identity.
+		if skill.id == "stab" and i == hit_count - 1:
+			per_hit_mult *= STAB_FINISHER_MULTIPLIER
+		var damage_result := DamageCalculator.calculate_attack_damage(stats, per_hit_mult, support_mods, skill)
 		_apply_melee_hit(damage_result, support_mods, i == 0)
 
 
@@ -695,7 +708,7 @@ func _apply_arrow_rain(skill_mult: float, support_mods: Dictionary) -> void:
 		var target: Node2D = targets[randi() % targets.size()]
 		if target == null or not is_instance_valid(target):
 			continue
-		var damage_result := DamageCalculator.calculate_attack_damage(stats, skill_mult, support_mods)
+		var damage_result := DamageCalculator.calculate_attack_damage(stats, skill_mult, support_mods, skill)
 		if target.has_method("take_damage"):
 			target.take_damage(damage_result, self)
 			_try_apply_status_on_hit(target, damage_result, support_mods)
@@ -726,13 +739,16 @@ func _launch_projectile(
 
 	for i in range(projectile_count):
 		var projectile: Projectile = PROJECTILE_SCENE.instantiate()
-		projectile.global_position = global_position
 
 		var angle_offset := 0.0
 		if projectile_count > 1:
 			var t := float(i) / float(projectile_count - 1)
 			angle_offset = lerpf(-spread_deg * 0.5, spread_deg * 0.5, t)
 		var aim_direction := Vector2.from_angle(base_angle + deg_to_rad(angle_offset))
+		var side_dir := Vector2(-aim_direction.y, aim_direction.x)
+		var side_index := float(i) - (float(projectile_count - 1) * 0.5)
+		var side_spacing := 10.0 if is_tracking else 0.0
+		projectile.global_position = global_position + side_dir * side_index * side_spacing
 
 		projectile.setup(
 			self,
@@ -748,6 +764,120 @@ func _launch_projectile(
 			chain_count
 		)
 		get_parent().add_child(projectile)
+
+
+func _cast_arc_lightning(
+	damage_result: DamageCalculator.DamageResult,
+	support_mods: Dictionary
+) -> void:
+	if current_target == null or not is_instance_valid(current_target):
+		return
+	if not (current_target is Node2D):
+		return
+	var skill := gem_link.skill_gem
+	if skill == null:
+		return
+
+	var max_chain := maxi(0, skill.chain_count + int(round(support_mods.get("chain_count", 0.0))))
+	var hit_targets: Dictionary = {}
+	var chain_targets: Array[Node2D] = []
+	var current_node := current_target as Node2D
+	var hops := 0
+
+	while current_node != null and is_instance_valid(current_node):
+		var key := str(current_node.get_instance_id())
+		if hit_targets.has(key):
+			break
+		hit_targets[key] = true
+		chain_targets.append(current_node)
+		if hops >= max_chain:
+			break
+		var next_target := _find_arc_chain_target(current_node, hit_targets)
+		if next_target == null:
+			break
+		current_node = next_target
+		hops += 1
+
+	var used_chain := maxi(chain_targets.size() - 1, 0)
+	var unused_chain := maxi(max_chain - used_chain, 0)
+	var bonus_mult := 1.0 + float(unused_chain) * ARC_UNUSED_CHAIN_MORE_PER_STACK
+	var result_to_apply := _scale_damage_result(damage_result, bonus_mult) if unused_chain > 0 else damage_result
+
+	var from_pos := global_position
+	var color: Color = StatTypes.ELEMENT_COLORS.get(_get_primary_element(damage_result), Color.WHITE)
+	for target_node in chain_targets:
+		if target_node == null or not is_instance_valid(target_node):
+			continue
+		_spawn_arc_beam_effect(from_pos, target_node.global_position, color)
+		if target_node.has_method("take_damage"):
+			target_node.take_damage(result_to_apply, self)
+			_try_apply_status_on_hit(target_node, result_to_apply, support_mods)
+			_try_apply_knockback_on_hit(target_node, support_mods)
+		from_pos = target_node.global_position
+
+
+func _find_arc_chain_target(from_target: Node2D, hit_targets: Dictionary) -> Node2D:
+	var enemies := get_tree().get_nodes_in_group("enemies")
+	var best: Node2D = null
+	var best_dist_sq := INF
+	var max_dist_sq := ARC_CHAIN_SEARCH_RADIUS * ARC_CHAIN_SEARCH_RADIUS
+
+	for enemy in enemies:
+		if not (enemy is Node2D):
+			continue
+		var enemy_node := enemy as Node2D
+		if enemy_node == null or not is_instance_valid(enemy_node):
+			continue
+		if enemy_node == from_target:
+			continue
+		if enemy_node.has_method("is_dead") and enemy_node.is_dead():
+			continue
+		var key := str(enemy_node.get_instance_id())
+		if hit_targets.has(key):
+			continue
+		var dist_sq := enemy_node.global_position.distance_squared_to(from_target.global_position)
+		if dist_sq > max_dist_sq:
+			continue
+		if dist_sq < best_dist_sq:
+			best_dist_sq = dist_sq
+			best = enemy_node
+
+	return best
+
+
+func _spawn_arc_beam_effect(start_pos: Vector2, end_pos: Vector2, color: Color) -> void:
+	var beam := Line2D.new()
+	beam.width = 3.5
+	beam.default_color = color
+	beam.z_index = 50
+	beam.add_point(start_pos)
+	beam.add_point(end_pos)
+	get_parent().add_child(beam)
+
+	var tween := create_tween()
+	tween.tween_property(beam, "modulate:a", 0.0, 0.12)
+	tween.tween_callback(beam.queue_free)
+
+
+func _scale_damage_result(
+	base: DamageCalculator.DamageResult,
+	multiplier: float
+) -> DamageCalculator.DamageResult:
+	var scaled := DamageCalculator.DamageResult.new()
+	var m := maxf(multiplier, 0.0)
+	scaled.physical_damage = base.physical_damage * m
+	scaled.fire_damage = base.fire_damage * m
+	scaled.ice_damage = base.ice_damage * m
+	scaled.lightning_damage = base.lightning_damage * m
+	scaled.total_damage = (
+		scaled.physical_damage +
+		scaled.fire_damage +
+		scaled.ice_damage +
+		scaled.lightning_damage
+	)
+	scaled.is_crit = base.is_crit
+	scaled.crit_multiplier = base.crit_multiplier
+	return scaled
 
 
 func _spawn_melee_effect(
@@ -794,9 +924,14 @@ func _spawn_arrow_rain_effect(center: Vector2, radius: float, arrow_count: int) 
 func _get_melee_targets(support_mods: Dictionary) -> Array[Node2D]:
 	if current_target == null or not is_instance_valid(current_target):
 		return []
+	if not (current_target is Node2D):
+		return []
+	var target_node := current_target as Node2D
 
 	if gem_link == null or gem_link.skill_gem == null:
-		return [current_target]
+		if _is_target_in_melee_range(target_node, get_attack_range()):
+			return _single_target_array(target_node)
+		return []
 
 	var skill := gem_link.skill_gem
 	var area_multiplier := float(support_mods.get("area_multiplier", 1.0))
@@ -804,19 +939,37 @@ func _get_melee_targets(support_mods: Dictionary) -> Array[Node2D]:
 
 	# 暗影突襲固定單體。
 	if skill.id == "shadow_strike":
-		return [current_target]
+		if _is_target_in_melee_range(target_node, get_attack_range()):
+			return _single_target_array(target_node)
+		return []
 
 	if not skill.has_tag(StatTypes.SkillTag.AOE):
-		return [current_target]
+		if _is_target_in_melee_range(target_node, get_attack_range()):
+			return _single_target_array(target_node)
+		return []
 
 	# 近戰 AOE：旋風斬為全圓，其餘 AOE 近戰預設前方扇形。
 	if skill.id == "whirlwind":
 		return _get_enemies_in_circle(global_position, radius)
 
-	var forward := (current_target.global_position - global_position).normalized()
+	var forward := (target_node.global_position - global_position).normalized()
 	if forward == Vector2.ZERO:
 		forward = Vector2.RIGHT
 	return _get_enemies_in_cone(global_position, forward, radius, 120.0)
+
+
+func _is_target_in_melee_range(target_node: Node2D, max_range: float) -> bool:
+	if target_node == null or not is_instance_valid(target_node):
+		return false
+	var clamped_range := maxf(max_range, 0.0)
+	return global_position.distance_squared_to(target_node.global_position) <= clamped_range * clamped_range
+
+
+func _single_target_array(target_node: Node2D) -> Array[Node2D]:
+	var result: Array[Node2D] = []
+	if target_node != null and is_instance_valid(target_node):
+		result.append(target_node)
+	return result
 
 
 func _get_enemies_in_circle(center: Vector2, radius: float) -> Array[Node2D]:
@@ -990,17 +1143,17 @@ func _try_apply_status_on_hit(
 	if target_status == null:
 		return
 
-	var bonus: float = support_mods.get("status_chance_bonus", 0.0)
+	var support_bonus: float = support_mods.get("status_chance_bonus", 0.0)
 	var total: float = maxf(damage_result.total_damage, 1.0)
 
 	if damage_result.fire_damage > 0.0:
-		_try_apply("burn", Constants.BURN_BASE_CHANCE, StatTypes.Stat.BURN_CHANCE, bonus, damage_result.fire_damage, total, target_status)
+		_try_apply("burn", Constants.BURN_BASE_CHANCE, StatTypes.Stat.BURN_CHANCE, support_bonus + _get_skill_status_bonus("burn"), damage_result.fire_damage, total, target_status)
 	if damage_result.ice_damage > 0.0:
-		_try_apply("freeze", Constants.FREEZE_BASE_CHANCE, StatTypes.Stat.FREEZE_CHANCE, bonus, damage_result.ice_damage, total, target_status)
+		_try_apply("freeze", Constants.FREEZE_BASE_CHANCE, StatTypes.Stat.FREEZE_CHANCE, support_bonus + _get_skill_status_bonus("freeze"), damage_result.ice_damage, total, target_status)
 	if damage_result.lightning_damage > 0.0:
-		_try_apply("shock", Constants.SHOCK_BASE_CHANCE, StatTypes.Stat.SHOCK_CHANCE, bonus, damage_result.lightning_damage, total, target_status)
+		_try_apply("shock", Constants.SHOCK_BASE_CHANCE, StatTypes.Stat.SHOCK_CHANCE, support_bonus + _get_skill_status_bonus("shock"), damage_result.lightning_damage, total, target_status)
 	if damage_result.physical_damage > 0.0:
-		_try_apply("bleed", Constants.BLEED_BASE_CHANCE, StatTypes.Stat.BLEED_CHANCE, bonus, damage_result.physical_damage, total, target_status)
+		_try_apply("bleed", Constants.BLEED_BASE_CHANCE, StatTypes.Stat.BLEED_CHANCE, support_bonus + _get_skill_status_bonus("bleed"), damage_result.physical_damage, total, target_status)
 
 
 func _try_apply(
@@ -1027,6 +1180,12 @@ func _try_apply_knockback_on_hit(target: Node, support_mods: Dictionary) -> void
 	if force <= 0.0:
 		return
 	target.apply_knockback(global_position, force)
+
+
+func _get_skill_status_bonus(status_type: String) -> float:
+	if gem_link == null or gem_link.skill_gem == null:
+		return 0.0
+	return gem_link.skill_gem.get_status_chance_bonus_for(status_type)
 
 
 func get_status_controller() -> StatusController:

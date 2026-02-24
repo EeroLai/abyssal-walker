@@ -81,3 +81,7 @@ Each run is about:
 1. Install Godot 4.x
 2. Open this folder as a Godot project
 3. Run `scenes/main/game.tscn`
+
+## Changelog
+
+- See `CHANGELOG.md` for gameplay, balance, and system updates.

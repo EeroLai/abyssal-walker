@@ -8,6 +8,7 @@ extends Node2D
 @export var skill_link_panel_scene: PackedScene
 @export var crafting_panel_scene: PackedScene
 @export var module_panel_scene: PackedScene
+@export var debug_grant_all_skill_gems: bool = true
 
 const HIT_EFFECT_SCENE := preload("res://scenes/effects/hit_effect.tscn")
 
@@ -60,6 +61,11 @@ const MATERIAL_DROP_CHANCE := 0.12
 const FLOOR_MILESTONE_INTERVAL := 10
 const FLOOR_MILESTONE_START := 20
 const MAX_DEATHS_PER_FLOOR := 3
+const STARTER_BACKUP_WEAPON_IDS: Array[String] = [
+	"iron_dagger",
+	"short_bow",
+	"apprentice_wand",
+]
 
 func _ready() -> void:
 	_load_scenes()
@@ -188,12 +194,15 @@ func _setup_initial_build() -> void:
 	var weapon: EquipmentData = ItemGenerator.generate_equipment("iron_sword", StatTypes.Rarity.WHITE, 1)
 	if weapon:
 		player.equip(weapon)
+	_grant_starter_backup_weapons()
 
 	# 初始技能寶石（放進技能背包）
 	for id in DataManager.get_starter_skill_gem_ids():
 		var gem := DataManager.create_skill_gem(id)
 		if gem:
 			player.add_skill_gem_to_inventory(gem)
+	if debug_grant_all_skill_gems:
+		_grant_all_skill_gems_for_testing()
 
 	# 初始輔助寶石（放進輔助背包）
 	for id in DataManager.get_starter_support_gem_ids():
@@ -211,6 +220,36 @@ func _setup_initial_build() -> void:
 	player.add_material("alter", 5)
 	player.add_material("augment", 5)
 	player.add_material("refine", 5)
+
+
+func _grant_starter_backup_weapons() -> void:
+	for base_id in STARTER_BACKUP_WEAPON_IDS:
+		var weapon := ItemGenerator.generate_equipment(base_id, StatTypes.Rarity.WHITE, 1)
+		if weapon != null:
+			player.add_to_inventory(weapon)
+
+
+func _grant_all_skill_gems_for_testing() -> void:
+	var all_ids := DataManager.get_all_skill_gem_ids()
+	for id in all_ids:
+		if _player_has_skill_gem_id(id):
+			continue
+		var gem := DataManager.create_skill_gem(id)
+		if gem != null:
+			player.add_skill_gem_to_inventory(gem)
+
+
+func _player_has_skill_gem_id(id: String) -> bool:
+	if player == null:
+		return false
+	if player.gem_link != null and player.gem_link.skill_gem != null:
+		if player.gem_link.skill_gem.id == id:
+			return true
+	for i in range(Constants.MAX_SKILL_GEM_INVENTORY):
+		var gem := player.get_skill_gem_in_inventory(i)
+		if gem != null and gem.id == id:
+			return true
+	return false
 
 
 func _start_floor(floor_number: int) -> void:

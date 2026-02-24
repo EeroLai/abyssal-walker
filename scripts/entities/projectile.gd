@@ -16,8 +16,12 @@ var _hit_targets: Dictionary = {}
 
 var _color: Color = Color.WHITE
 var _lifetime: float = 4.0
+var _tracking_warmup: float = 0.0
 const HIT_RADIUS: float = 14.0
 const CHAIN_SEARCH_RADIUS: float = 240.0
+const TRACKING_STRAIGHT_TIME: float = 0.12
+const TRACKING_MAX_TURN_RATE: float = 8.5
+const UNUSED_CHAIN_MORE_PER_STACK: float = 0.05
 
 
 func setup(
@@ -44,6 +48,7 @@ func setup(
 	explosion_radius = maxf(explosion_radius_value, 0.0)
 	pierce_remaining = max(0, pierce_count)
 	chain_remaining = max(0, chain_count)
+	_tracking_warmup = TRACKING_STRAIGHT_TIME if is_tracking else 0.0
 	_hit_targets.clear()
 	_aim_direction = aim_direction.normalized()
 	if _aim_direction == Vector2.ZERO:
@@ -66,15 +71,20 @@ func _process(delta: float) -> void:
 
 	if is_tracking and target and is_instance_valid(target) and not _is_dead(target):
 		target_position = target.global_position
+		var desired_dir := (target_position - global_position).normalized()
+		if desired_dir != Vector2.ZERO:
+			if _tracking_warmup > 0.0:
+				_tracking_warmup = maxf(_tracking_warmup - delta, 0.0)
+			else:
+				_aim_direction = _rotate_towards(_aim_direction, desired_dir, TRACKING_MAX_TURN_RATE * delta)
 
-	var dist := global_position.distance_to(target_position)
-	if dist < HIT_RADIUS:
+	if is_tracking and target and is_instance_valid(target) and global_position.distance_to(target_position) < HIT_RADIUS:
 		_on_reach_target()
 		return
 
-	var dir := (target_position - global_position).normalized()
+	var dir := _aim_direction
 	if dir == Vector2.ZERO:
-		dir = _aim_direction
+		dir = Vector2.RIGHT
 	global_position += dir * speed * delta
 	rotation = dir.angle()
 	_check_overlap_hit()
@@ -98,12 +108,19 @@ func _on_reach_target() -> void:
 
 
 func _deal_damage_to_target(tgt: Node) -> void:
+	_deal_damage_to_target_with_result(tgt, damage_result)
+
+
+func _deal_damage_to_target_with_result(
+	tgt: Node,
+	result_to_apply: DamageCalculator.DamageResult
+) -> void:
 	if not tgt.has_method("take_damage"):
 		return
-	tgt.take_damage(damage_result, source)
+	tgt.take_damage(result_to_apply, source)
 
 	if source and source.has_method("on_projectile_hit"):
-		source.on_projectile_hit(tgt, damage_result, support_mods)
+		source.on_projectile_hit(tgt, result_to_apply, support_mods)
 
 
 func _handle_target_hit(tgt: Node2D) -> void:
@@ -113,10 +130,21 @@ func _handle_target_hit(tgt: Node2D) -> void:
 	if _hit_targets.has(key):
 		return
 	_hit_targets[key] = true
-	_deal_damage_to_target(tgt)
+
+	var next_target: Node2D = null
+	var unused_chains := 0
+	if chain_remaining > 0:
+		next_target = _find_chain_target(tgt)
+		if next_target == null:
+			unused_chains = chain_remaining
+
+	var result_to_apply := damage_result
+	if unused_chains > 0:
+		var bonus_mult := 1.0 + float(unused_chains) * UNUSED_CHAIN_MORE_PER_STACK
+		result_to_apply = _scaled_damage_result(damage_result, bonus_mult)
+	_deal_damage_to_target_with_result(tgt, result_to_apply)
 
 	if chain_remaining > 0:
-		var next_target := _find_chain_target(tgt)
 		chain_remaining -= 1
 		if next_target != null:
 			target = next_target
@@ -199,3 +227,36 @@ func _is_dead(node: Node) -> bool:
 	if node.has_method("is_dead"):
 		return node.is_dead()
 	return false
+
+
+func _rotate_towards(current_dir: Vector2, desired_dir: Vector2, max_delta: float) -> Vector2:
+	var current := current_dir.normalized()
+	if current == Vector2.ZERO:
+		current = desired_dir.normalized()
+	var desired := desired_dir.normalized()
+	if desired == Vector2.ZERO:
+		return current
+	var delta := wrapf(desired.angle() - current.angle(), -PI, PI)
+	delta = clampf(delta, -max_delta, max_delta)
+	return current.rotated(delta).normalized()
+
+
+func _scaled_damage_result(
+	base: DamageCalculator.DamageResult,
+	multiplier: float
+) -> DamageCalculator.DamageResult:
+	var scaled := DamageCalculator.DamageResult.new()
+	var m := maxf(multiplier, 0.0)
+	scaled.physical_damage = base.physical_damage * m
+	scaled.fire_damage = base.fire_damage * m
+	scaled.ice_damage = base.ice_damage * m
+	scaled.lightning_damage = base.lightning_damage * m
+	scaled.total_damage = (
+		scaled.physical_damage +
+		scaled.fire_damage +
+		scaled.ice_damage +
+		scaled.lightning_damage
+	)
+	scaled.is_crit = base.is_crit
+	scaled.crit_multiplier = base.crit_multiplier
+	return scaled

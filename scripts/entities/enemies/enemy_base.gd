@@ -2,6 +2,7 @@ class_name EnemyBase
 extends CharacterBody2D
 
 signal died(enemy: EnemyBase)
+const ENEMY_PROJECTILE_SCRIPT := preload("res://scripts/entities/enemies/enemy_projectile.gd")
 
 @export var enemy_id: String = "slime"
 @export var display_name: String = "史萊姆"
@@ -15,6 +16,8 @@ signal died(enemy: EnemyBase)
 @export var atk_speed: float = 0.8
 @export var experience: float = 10.0
 @export var behavior: String = "chase"
+@export var uses_projectile: bool = false
+@export var projectile_speed: float = 320.0
 
 # 元素屬性
 @export var element: StatTypes.Element = StatTypes.Element.PHYSICAL
@@ -134,8 +137,7 @@ func take_damage(damage_result: DamageCalculator.DamageResult, attacker: Node) -
 	if _is_dead:
 		return
 
-	# 簡化的受傷計算（敵人用簡單的防禦公式）
-	var total_damage := damage_result.total_damage
+	# 分通道承傷：物理吃防禦，元素吃各自抗性。
 	var attacker_stats: StatContainer = _extract_attacker_stats(attacker)
 	var armor_shred: float = 0.0
 	var phys_pen: float = 0.0
@@ -147,16 +149,22 @@ func take_damage(damage_result: DamageCalculator.DamageResult, attacker: Node) -
 		element_pen = clampf(attacker_stats.get_stat(StatTypes.Stat.ELEMENTAL_PEN), 0.0, 0.95)
 		res_shred = clampf(attacker_stats.get_stat(StatTypes.Stat.RES_SHRED), 0.0, 0.95)
 
-	# 應用抗性
-	total_damage -= damage_result.fire_damage * _get_effective_resistance("fire", element_pen, res_shred)
-	total_damage -= damage_result.ice_damage * _get_effective_resistance("ice", element_pen, res_shred)
-	total_damage -= damage_result.lightning_damage * _get_effective_resistance("lightning", element_pen, res_shred)
-
-	# 應用防禦
+	# 物理只套防禦與物理穿透。
+	var physical_damage := maxf(damage_result.physical_damage, 0.0)
 	var effective_def: float = maxf(base_def - armor_shred, 0.0)
 	var def_reduction := effective_def / (effective_def + 50.0)
 	def_reduction *= (1.0 - phys_pen)
-	total_damage *= (1.0 - def_reduction)
+	physical_damage *= (1.0 - def_reduction)
+
+	# 元素只套抗性與元素穿透。
+	var fire_damage := maxf(damage_result.fire_damage, 0.0)
+	fire_damage *= (1.0 - _get_effective_resistance("fire", element_pen, res_shred))
+	var ice_damage := maxf(damage_result.ice_damage, 0.0)
+	ice_damage *= (1.0 - _get_effective_resistance("ice", element_pen, res_shred))
+	var lightning_damage := maxf(damage_result.lightning_damage, 0.0)
+	lightning_damage *= (1.0 - _get_effective_resistance("lightning", element_pen, res_shred))
+
+	var total_damage := physical_damage + fire_damage + ice_damage + lightning_damage
 	if status_controller:
 		total_damage *= status_controller.get_damage_taken_multiplier()
 
@@ -166,7 +174,7 @@ func take_damage(damage_result: DamageCalculator.DamageResult, attacker: Node) -
 		_apply_thorns(attacker, total_damage)
 
 	# 顯示傷害數字
-	_spawn_damage_number(total_damage, damage_result.is_crit, attacker)
+	_spawn_damage_number(total_damage, damage_result, attacker)
 
 	# 受擊反饋
 	_on_hit()
@@ -183,16 +191,37 @@ func apply_status_damage(amount: float, element: StatTypes.Element) -> void:
 		_die()
 
 
-func _spawn_damage_number(damage: float, is_crit: bool, source: Node) -> void:
+func _spawn_damage_number(damage: float, damage_result: DamageCalculator.DamageResult, source: Node) -> void:
 	# 發送事件，讓 UI 系統處理
+	var display_element := _get_primary_damage_element(damage_result)
 	var damage_info: Dictionary = {
 		"damage": damage,
 		"final_damage": damage,
-		"is_crit": is_crit,
+		"is_crit": damage_result.is_crit,
 		"position": global_position + Vector2(0, -20),
-		"element": element,
+		"element": display_element,
 	}
 	EventBus.damage_dealt.emit(source, self, damage_info)
+
+
+func _get_primary_damage_element(damage_result: DamageCalculator.DamageResult) -> StatTypes.Element:
+	var physical := maxf(damage_result.physical_damage, 0.0)
+	var fire := maxf(damage_result.fire_damage, 0.0)
+	var ice := maxf(damage_result.ice_damage, 0.0)
+	var lightning := maxf(damage_result.lightning_damage, 0.0)
+
+	var max_value := physical
+	var result := StatTypes.Element.PHYSICAL
+	if fire > max_value:
+		max_value = fire
+		result = StatTypes.Element.FIRE
+	if ice > max_value:
+		max_value = ice
+		result = StatTypes.Element.ICE
+	if lightning > max_value:
+		result = StatTypes.Element.LIGHTNING
+
+	return result
 
 
 func _on_hit() -> void:
@@ -235,24 +264,53 @@ func _on_attack_timer_timeout() -> void:
 	if distance > atk_range:
 		return
 
-	# 對玩家造成傷害
+	var damage_result := _build_attack_damage_result()
+	if damage_result == null:
+		return
+
+	if _should_fire_projectile():
+		_launch_projectile_attack(damage_result)
+		return
+
 	if target.has_method("take_damage"):
-		var damage_result := DamageCalculator.DamageResult.new()
-
-		match element:
-			StatTypes.Element.PHYSICAL:
-				damage_result.physical_damage = get_attack_damage()
-			StatTypes.Element.FIRE:
-				damage_result.fire_damage = get_attack_damage()
-			StatTypes.Element.ICE:
-				damage_result.ice_damage = get_attack_damage()
-			StatTypes.Element.LIGHTNING:
-				damage_result.lightning_damage = get_attack_damage()
-
-		damage_result.total_damage = get_attack_damage()
 		target.take_damage(damage_result, self)
-		if _elite_life_leech_ratio > 0.0:
-			heal(get_attack_damage() * _elite_life_leech_ratio)
+		on_enemy_projectile_hit()
+
+
+func on_enemy_projectile_hit() -> void:
+	if _elite_life_leech_ratio > 0.0:
+		heal(get_attack_damage() * _elite_life_leech_ratio)
+
+
+func _build_attack_damage_result() -> DamageCalculator.DamageResult:
+	var result := DamageCalculator.DamageResult.new()
+	match element:
+		StatTypes.Element.PHYSICAL:
+			result.physical_damage = get_attack_damage()
+		StatTypes.Element.FIRE:
+			result.fire_damage = get_attack_damage()
+		StatTypes.Element.ICE:
+			result.ice_damage = get_attack_damage()
+		StatTypes.Element.LIGHTNING:
+			result.lightning_damage = get_attack_damage()
+	result.total_damage = get_attack_damage()
+	return result
+
+
+func _should_fire_projectile() -> bool:
+	return uses_projectile or behavior == "ranged"
+
+
+func _launch_projectile_attack(damage_result: DamageCalculator.DamageResult) -> void:
+	if target == null or not is_instance_valid(target):
+		return
+	var projectile = ENEMY_PROJECTILE_SCRIPT.new() as EnemyProjectile
+	if projectile == null:
+		return
+	projectile.global_position = global_position
+	var proj_color: Color = StatTypes.ELEMENT_COLORS.get(element, Color(1.0, 0.5, 0.3, 1.0))
+	projectile.setup(self, target, damage_result, projectile_speed, proj_color)
+	get_parent().add_child(projectile)
 
 
 func apply_floor_multipliers(hp_mult: float, atk_mult: float) -> void:
@@ -299,9 +357,9 @@ func apply_elite_mods(mods: Array[String]) -> void:
 				base_def += 10.0
 				hp_multiplier *= 1.25
 			"elemental_shield":
-				resistances["fire"] = clampf(float(resistances.get("fire", 0.0)) + 0.25, 0.0, 0.9)
-				resistances["ice"] = clampf(float(resistances.get("ice", 0.0)) + 0.25, 0.0, 0.9)
-				resistances["lightning"] = clampf(float(resistances.get("lightning", 0.0)) + 0.25, 0.0, 0.9)
+				resistances["fire"] = clampf(float(resistances.get("fire", 0.0)) + 0.15, 0.0, 0.65)
+				resistances["ice"] = clampf(float(resistances.get("ice", 0.0)) + 0.15, 0.0, 0.65)
+				resistances["lightning"] = clampf(float(resistances.get("lightning", 0.0)) + 0.15, 0.0, 0.65)
 			"rage":
 				pass
 			"lifeleech":
@@ -349,7 +407,7 @@ func _apply_elite_runtime_states() -> void:
 
 func _get_effective_resistance(element_key: String, pen: float, shred: float) -> float:
 	var base_res: float = float(resistances.get(element_key, 0.0))
-	return clampf(base_res - pen - shred, -0.5, 0.9)
+	return clampf(base_res - pen - shred, -0.5, 0.65)
 
 
 func _extract_attacker_stats(attacker: Node) -> StatContainer:

@@ -205,6 +205,7 @@ func create_skill_gem(id: String) -> SkillGem:
 	gem.display_name = data.get("display_name", id)
 	gem.description = data.get("description", "")
 	gem.base_damage_multiplier = float(data.get("base_damage_multiplier", 1.0))
+	gem.attack_speed_multiplier = maxf(float(data.get("attack_speed_multiplier", 1.0)), 0.1)
 	gem.base_range = float(data.get("base_range", 50.0))
 	gem.base_cooldown = float(data.get("base_cooldown", 0.0))
 	gem.projectile_speed = float(data.get("projectile_speed", 450.0))
@@ -213,6 +214,9 @@ func create_skill_gem(id: String) -> SkillGem:
 	gem.chain_count = int(data.get("chain_count", 0))
 	gem.hit_count = maxi(1, int(data.get("hit_count", 1)))
 	gem.arrow_count = maxi(1, int(data.get("arrow_count", 1)))
+	gem.conversion_element = _element_from_string(str(data.get("conversion_element", "physical")))
+	gem.conversion_ratio = clampf(float(data.get("conversion_ratio", 0.0)), 0.0, 1.0)
+	gem.element_status_chance_bonus = maxf(float(data.get("element_status_chance_bonus", 0.0)), 0.0)
 	gem.weapon_restrictions = _parse_weapon_restrictions(data.get("weapon_restrictions", []))
 	gem.tags = _parse_skill_tags(data.get("tags", []))
 	return gem
@@ -268,7 +272,17 @@ func _skill_tag_from_string(value: String) -> int:
 		"fast": return StatTypes.SkillTag.FAST
 		"heavy": return StatTypes.SkillTag.HEAVY
 		"tracking": return StatTypes.SkillTag.TRACKING
+		"chain": return StatTypes.SkillTag.CHAIN
 		_: return -1
+
+
+func _element_from_string(value: String) -> StatTypes.Element:
+	match value.to_lower():
+		"physical": return StatTypes.Element.PHYSICAL
+		"fire": return StatTypes.Element.FIRE
+		"ice": return StatTypes.Element.ICE
+		"lightning": return StatTypes.Element.LIGHTNING
+		_: return StatTypes.Element.PHYSICAL
 
 
 func get_enemy(id: String) -> Dictionary:

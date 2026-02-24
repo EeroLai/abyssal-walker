@@ -9,6 +9,7 @@ extends Resource
 @export var tags: Array[StatTypes.SkillTag] = []
 
 @export var base_damage_multiplier: float = 1.0
+@export var attack_speed_multiplier: float = 1.0
 @export var base_cooldown: float = 0.0
 @export var base_range: float = 50.0
 @export var projectile_speed: float = 450.0
@@ -17,6 +18,9 @@ extends Resource
 @export var chain_count: int = 0
 @export var hit_count: int = 1
 @export var arrow_count: int = 1
+@export var conversion_element: StatTypes.Element = StatTypes.Element.PHYSICAL
+@export var conversion_ratio: float = 0.0
+@export var element_status_chance_bonus: float = 0.0
 
 @export var level: int = 1
 @export var experience: float = 0.0
@@ -24,6 +28,7 @@ extends Resource
 @export var mutated_id: String = ""
 
 const DAMAGE_PER_LEVEL := 0.05
+const ATTACK_SPEED_PER_LEVEL := 0.01
 const RANGE_PER_LEVEL := 0.015
 const PROJECTILE_SPEED_PER_LEVEL := 0.02
 const EXPLOSION_RADIUS_PER_LEVEL := 0.015
@@ -31,6 +36,10 @@ const EXPLOSION_RADIUS_PER_LEVEL := 0.015
 
 func get_damage_multiplier() -> float:
 	return base_damage_multiplier * (1.0 + (level - 1) * DAMAGE_PER_LEVEL)
+
+
+func get_attack_speed_multiplier() -> float:
+	return attack_speed_multiplier * (1.0 + (level - 1) * ATTACK_SPEED_PER_LEVEL)
 
 
 func get_effective_range() -> float:
@@ -82,6 +91,7 @@ func get_tooltip() -> String:
 	lines.append(description)
 	lines.append("")
 	lines.append("傷害倍率: %.1f%%" % (get_damage_multiplier() * 100.0))
+	lines.append("攻速倍率: x%.2f" % get_attack_speed_multiplier())
 	lines.append("攻擊範圍: %.0f" % get_effective_range())
 
 	if has_tag(StatTypes.SkillTag.PROJECTILE):
@@ -96,6 +106,10 @@ func get_tooltip() -> String:
 		lines.append("穿透目標: %d" % pierce_count)
 	if chain_count > 0:
 		lines.append("連鎖次數: %d" % chain_count)
+	if conversion_ratio > 0.0 and conversion_element != StatTypes.Element.PHYSICAL:
+		lines.append("物理轉換: %.0f%% -> %s" % [clampf(conversion_ratio, 0.0, 1.0) * 100.0, _get_element_name(conversion_element)])
+	if element_status_chance_bonus > 0.0:
+		lines.append("元素異常機率: +%.1f%%" % (element_status_chance_bonus * 100.0))
 
 	if not weapon_restrictions.is_empty():
 		var weapons: Array[String] = []
@@ -130,4 +144,23 @@ func _get_tag_name(tag: StatTypes.SkillTag) -> String:
 		StatTypes.SkillTag.FAST: return "快速"
 		StatTypes.SkillTag.HEAVY: return "重擊"
 		StatTypes.SkillTag.TRACKING: return "追蹤"
+		StatTypes.SkillTag.CHAIN: return "連鎖"
 		_: return "未知"
+
+
+func _get_element_name(element: StatTypes.Element) -> String:
+	match element:
+		StatTypes.Element.PHYSICAL: return "物理"
+		StatTypes.Element.FIRE: return "火焰"
+		StatTypes.Element.ICE: return "冰霜"
+		StatTypes.Element.LIGHTNING: return "閃電"
+		_: return "未知"
+
+
+func get_status_chance_bonus_for(status_type: String) -> float:
+	if element_status_chance_bonus <= 0.0:
+		return 0.0
+	var mapped: String = StatTypes.ELEMENT_STATUS.get(conversion_element, "")
+	if mapped == status_type:
+		return element_status_chance_bonus
+	return 0.0
