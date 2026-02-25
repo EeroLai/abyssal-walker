@@ -1,8 +1,6 @@
 class_name HUD
 extends Control
 
-signal decrease_farm_floor_requested
-signal increase_farm_floor_requested
 signal challenge_failed_floor_requested
 
 @onready var floor_label: Label = $FloorLabel
@@ -20,13 +18,17 @@ var pickup_feed: VBoxContainer = null
 var _pickup_entries: Array[Dictionary] = []
 var _pickup_labels: Array[Label] = []
 var loot_filter_label: Label = null
+var risk_label: Label = null
+var extraction_prompt_panel: PanelContainer = null
+var extraction_prompt_label: Label = null
+var run_summary_panel: PanelContainer = null
+var run_summary_title_label: Label = null
+var run_summary_detail_label: Label = null
 var progression_mode_label: Label = null
 var progression_primary_label: Label = null
 var progression_secondary_label: Label = null
 var progression_buttons: HBoxContainer = null
 var progression_panel: PanelContainer = null
-var floor_minus_button: Button = null
-var floor_plus_button: Button = null
 var damage_vignette: Panel = null
 var _last_hp_value: float = -1.0
 var _damage_vignette_tween: Tween = null
@@ -37,12 +39,15 @@ const PICKUP_FADE_TIME: float = 0.35
 
 
 func _ready() -> void:
-	_create_floor_stepper_buttons()
 	_create_pickup_feed()
 	_create_loot_filter_label()
+	_create_risk_label()
+	_create_extraction_prompt_label()
+	_create_run_summary_panel()
 	_create_progression_labels()
 	_create_damage_vignette()
 	_refresh_loot_filter_label()
+	_on_risk_score_changed(GameManager.risk_score, GameManager.get_risk_tier())
 	_connect_signals()
 
 
@@ -60,6 +65,11 @@ func _connect_signals() -> void:
 	EventBus.status_applied.connect(_on_status_applied)
 	EventBus.status_removed.connect(_on_status_removed)
 	EventBus.loot_filter_changed.connect(_on_loot_filter_changed)
+	EventBus.risk_score_changed.connect(_on_risk_score_changed)
+	EventBus.extraction_window_opened.connect(_on_extraction_window_opened)
+	EventBus.extraction_window_closed.connect(_on_extraction_window_closed)
+	EventBus.run_extracted.connect(_on_run_extracted)
+	EventBus.run_failed.connect(_on_run_failed)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -95,7 +105,7 @@ func _on_dps_updated(dps: float) -> void:
 func _on_kill_count_changed(count: int) -> void:
 	kills = count
 	if kills_label:
-		kills_label.text = "擊殺: %d" % kills
+		kills_label.text = "擊殺：%d" % kills
 
 
 func _on_floor_entered(floor_number: int) -> void:
@@ -104,7 +114,7 @@ func _on_floor_entered(floor_number: int) -> void:
 
 func update_floor(floor_number: int) -> void:
 	if floor_label:
-		floor_label.text = "深淵 第 %d 層" % floor_number
+		floor_label.text = "深淵 %d 層" % floor_number
 
 
 func set_progression_status(text: String) -> void:
@@ -125,17 +135,15 @@ func set_progression_display(mode_text: String, primary_text: String, secondary_
 func set_floor_choice_visible(visible: bool) -> void:
 	if progression_panel == null:
 		return
-	# 目前改為固定顯示進程卡片，這個接口保留給舊呼叫端。
-	progression_panel.visible = true
+	progression_panel.visible = visible
 
 
 func update_enemy_count(count: int) -> void:
 	if enemy_count_label:
-		enemy_count_label.text = "敵人: %d" % count
+		enemy_count_label.text = "敵人：%d" % count
 
 
 func _on_item_picked_up(_item_data: Variant) -> void:
-	# 需要從 Game 取得 player 來更新背包數量
 	var game := get_tree().current_scene
 	if game and "player" in game and game.player:
 		var player: Player = game.player
@@ -167,7 +175,7 @@ func _on_gem_leveled_up(gem: Resource, new_level: int) -> void:
 
 func update_inventory(count: int) -> void:
 	if inventory_label:
-		inventory_label.text = "背包: %d/60" % count
+		inventory_label.text = "背包：%d/60" % count
 
 
 func _on_status_applied(target: Node, status_type: String, stacks: int) -> void:
@@ -231,11 +239,11 @@ func _remove_status_icon(status_type: String) -> void:
 
 func _status_short_name(status_type: String) -> String:
 	match status_type:
-		"burn": return "燃"
-		"freeze": return "凍"
-		"shock": return "電"
-		"bleed": return "血"
-		_: return "?"
+		"burn": return "B"
+		"freeze": return "F"
+		"shock": return "S"
+		"bleed": return "BL"
+		_: return "-"
 
 
 func _status_color(status_type: String) -> Color:
@@ -271,38 +279,6 @@ func _create_pickup_feed() -> void:
 		label.add_theme_font_size_override("font_size", 14)
 		pickup_feed.add_child(label)
 		_pickup_labels.append(label)
-
-
-func _create_floor_stepper_buttons() -> void:
-	floor_minus_button = Button.new()
-	floor_minus_button.name = "FloorMinusButton"
-	floor_minus_button.anchor_left = 0.5
-	floor_minus_button.anchor_top = 0.0
-	floor_minus_button.anchor_right = 0.5
-	floor_minus_button.anchor_bottom = 0.0
-	floor_minus_button.offset_left = -124.0
-	floor_minus_button.offset_top = 12.0
-	floor_minus_button.offset_right = -96.0
-	floor_minus_button.offset_bottom = 36.0
-	floor_minus_button.text = "-"
-	floor_minus_button.add_theme_font_size_override("font_size", 14)
-	floor_minus_button.pressed.connect(func() -> void: decrease_farm_floor_requested.emit())
-	add_child(floor_minus_button)
-
-	floor_plus_button = Button.new()
-	floor_plus_button.name = "FloorPlusButton"
-	floor_plus_button.anchor_left = 0.5
-	floor_plus_button.anchor_top = 0.0
-	floor_plus_button.anchor_right = 0.5
-	floor_plus_button.anchor_bottom = 0.0
-	floor_plus_button.offset_left = 96.0
-	floor_plus_button.offset_top = 12.0
-	floor_plus_button.offset_right = 124.0
-	floor_plus_button.offset_bottom = 36.0
-	floor_plus_button.text = "+"
-	floor_plus_button.add_theme_font_size_override("font_size", 14)
-	floor_plus_button.pressed.connect(func() -> void: increase_farm_floor_requested.emit())
-	add_child(floor_plus_button)
 
 
 func _create_damage_vignette() -> void:
@@ -357,6 +333,99 @@ func _create_loot_filter_label() -> void:
 	add_child(loot_filter_label)
 
 
+func _create_risk_label() -> void:
+	risk_label = Label.new()
+	risk_label.name = "RiskLabel"
+	risk_label.anchor_left = 1.0
+	risk_label.anchor_top = 0.0
+	risk_label.anchor_right = 1.0
+	risk_label.anchor_bottom = 0.0
+	risk_label.offset_left = -330.0
+	risk_label.offset_top = 58.0
+	risk_label.offset_right = -20.0
+	risk_label.offset_bottom = 80.0
+	risk_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	risk_label.add_theme_font_size_override("font_size", 13)
+	risk_label.modulate = Color(1.0, 0.88, 0.58, 0.95)
+	add_child(risk_label)
+
+
+func _create_extraction_prompt_label() -> void:
+	extraction_prompt_panel = PanelContainer.new()
+	extraction_prompt_panel.name = "ExtractionPromptPanel"
+	extraction_prompt_panel.anchor_left = 0.5
+	extraction_prompt_panel.anchor_top = 0.0
+	extraction_prompt_panel.anchor_right = 0.5
+	extraction_prompt_panel.anchor_bottom = 0.0
+	extraction_prompt_panel.offset_left = -150.0
+	extraction_prompt_panel.offset_top = 56.0
+	extraction_prompt_panel.offset_right = 150.0
+	extraction_prompt_panel.offset_bottom = 140.0
+	extraction_prompt_panel.visible = false
+	add_child(extraction_prompt_panel)
+
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.18, 0.08, 0.06, 0.92)
+	style.border_color = Color(1.0, 0.64, 0.3, 0.96)
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(8)
+	style.content_margin_left = 10
+	style.content_margin_right = 10
+	style.content_margin_top = 8
+	style.content_margin_bottom = 8
+	extraction_prompt_panel.add_theme_stylebox_override("panel", style)
+
+	extraction_prompt_label = Label.new()
+	extraction_prompt_label.name = "ExtractionPromptLabel"
+	extraction_prompt_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	extraction_prompt_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	extraction_prompt_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	extraction_prompt_label.add_theme_font_size_override("font_size", 14)
+	extraction_prompt_label.modulate = Color(1.0, 0.95, 0.82, 1.0)
+	extraction_prompt_panel.add_child(extraction_prompt_label)
+
+
+func _create_run_summary_panel() -> void:
+	run_summary_panel = PanelContainer.new()
+	run_summary_panel.name = "RunSummaryPanel"
+	run_summary_panel.anchor_left = 0.0
+	run_summary_panel.anchor_top = 1.0
+	run_summary_panel.anchor_right = 0.0
+	run_summary_panel.anchor_bottom = 1.0
+	run_summary_panel.offset_left = 16.0
+	run_summary_panel.offset_top = -112.0
+	run_summary_panel.offset_right = 300.0
+	run_summary_panel.offset_bottom = -16.0
+	run_summary_panel.visible = false
+	add_child(run_summary_panel)
+
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.08, 0.1, 0.14, 0.84)
+	style.border_color = Color(0.32, 0.42, 0.56, 0.9)
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(6)
+	style.content_margin_left = 8
+	style.content_margin_right = 8
+	style.content_margin_top = 6
+	style.content_margin_bottom = 6
+	run_summary_panel.add_theme_stylebox_override("panel", style)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 4)
+	run_summary_panel.add_child(vbox)
+
+	run_summary_title_label = Label.new()
+	run_summary_title_label.add_theme_font_size_override("font_size", 12)
+	run_summary_title_label.modulate = Color(0.97, 0.94, 0.72, 0.98)
+	vbox.add_child(run_summary_title_label)
+
+	run_summary_detail_label = Label.new()
+	run_summary_detail_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	run_summary_detail_label.add_theme_font_size_override("font_size", 11)
+	run_summary_detail_label.modulate = Color(0.9, 0.95, 1.0, 0.94)
+	vbox.add_child(run_summary_detail_label)
+
+
 func _create_progression_labels() -> void:
 	progression_panel = PanelContainer.new()
 	progression_panel.name = "ProgressionPanel"
@@ -392,7 +461,7 @@ func _create_progression_labels() -> void:
 
 	progression_mode_label = Label.new()
 	progression_mode_label.name = "ProgressionModeLabel"
-	progression_mode_label.text = "模式：推進中"
+	progression_mode_label.text = "模式：推進"
 	progression_mode_label.add_theme_font_size_override("font_size", 12)
 	progression_mode_label.modulate = Color(0.9, 0.84, 0.58, 0.98)
 	top_row.add_child(progression_mode_label)
@@ -420,7 +489,7 @@ func _create_progression_labels() -> void:
 	vbox.add_child(progression_buttons)
 
 	var btn_retry := Button.new()
-	btn_retry.text = "挑戰待重試層"
+	btn_retry.text = "挑戰失敗樓層"
 	btn_retry.custom_minimum_size = Vector2(108, 22)
 	btn_retry.pressed.connect(func() -> void: challenge_failed_floor_requested.emit())
 	progression_buttons.add_child(btn_retry)
@@ -430,10 +499,66 @@ func _on_loot_filter_changed(_mode: int) -> void:
 	_refresh_loot_filter_label()
 
 
+func _on_risk_score_changed(new_value: int, tier: int) -> void:
+	if risk_label == null:
+		return
+	risk_label.text = "風險：%d（階段 %d）" % [new_value, tier]
+
+
+func _on_extraction_window_opened(_floor_number: int, timeout_sec: float) -> void:
+	set_extraction_prompt(true, "[E] 立即撤離（%d 秒）" % int(timeout_sec))
+
+
+func _on_extraction_window_closed(_floor_number: int, _extracted: bool) -> void:
+	set_extraction_prompt(false, "")
+
+
+func _on_run_extracted(summary: Dictionary) -> void:
+	var floor: int = int(summary.get("floor", 0))
+	var risk: int = int(summary.get("risk", 0))
+	var tier: int = int(summary.get("tier", 0))
+	var carried: int = int(summary.get("materials_carried", 0))
+	_show_run_summary(
+		"撤離結算",
+		"樓層：%d\n風險：%d（階段 %d）\n帶出材料總數：%d" % [floor, risk, tier, carried]
+	)
+	_add_feed_entry("run_extracted", "已撤離：樓層 %d（風險 %d）" % [floor, risk], 1, Color(0.7, 1.0, 0.72))
+
+
+func _on_run_failed(summary: Dictionary) -> void:
+	var lost: int = int(summary.get("lost", 0))
+	var kept: int = int(summary.get("kept", 0))
+	var ratio: float = float(summary.get("keep_ratio", 0.0))
+	var tier: int = int(summary.get("tier", 0))
+	var risk: int = int(summary.get("risk", 0))
+	_show_run_summary(
+		"死亡結算",
+		"風險：%d（階段 %d）\n損失材料：%d\n保留材料：%d（保留 %.0f%%）" % [risk, tier, lost, kept, ratio * 100.0]
+	)
+	if lost <= 0:
+		return
+	_add_feed_entry("run_failed", "挑戰失敗：損失 %d 材料，保留 %d" % [lost, kept], 1, Color(1.0, 0.56, 0.56))
+
+
+func set_extraction_prompt(visible: bool, text: String) -> void:
+	if extraction_prompt_label == null or extraction_prompt_panel == null:
+		return
+	extraction_prompt_panel.visible = visible
+	extraction_prompt_label.text = text
+
+
+func _show_run_summary(title: String, detail: String) -> void:
+	if run_summary_panel == null:
+		return
+	run_summary_title_label.text = title
+	run_summary_detail_label.text = detail
+	run_summary_panel.visible = true
+
+
 func _refresh_loot_filter_label() -> void:
 	if loot_filter_label == null:
 		return
-	loot_filter_label.text = "[L] 掉落過濾: %s" % GameManager.get_loot_filter_name()
+	loot_filter_label.text = "[L] 掉落篩選：%s" % GameManager.get_loot_filter_name()
 
 
 func _show_pickup_message(item_data: Variant) -> void:
@@ -481,23 +606,23 @@ func _add_feed_entry(key: String, text: String, increment: int, color: Color) ->
 func _pickup_text(item_data: Variant) -> String:
 	if item_data is EquipmentData:
 		var eq := item_data as EquipmentData
-		return "拾取裝備：%s" % eq.display_name
+		return "撿到裝備：%s" % eq.display_name
 	if item_data is SkillGem:
 		var gem := item_data as SkillGem
-		return "拾取技能寶石：%s" % gem.display_name
+		return "撿到技能寶石：%s" % gem.display_name
 	if item_data is SupportGem:
 		var support := item_data as SupportGem
-		return "拾取輔助寶石：%s" % support.display_name
+		return "撿到輔助寶石：%s" % support.display_name
 	if item_data is Module:
 		var mod := item_data as Module
-		return "拾取模組：%s" % mod.display_name
+		return "撿到模組：%s" % mod.display_name
 	if item_data is Dictionary:
 		var mat_id: String = str(item_data.get("material_id", ""))
 		var amount: int = int(item_data.get("amount", 1))
 		if mat_id != "":
 			var mat_data: Dictionary = DataManager.get_crafting_material(mat_id)
 			var mat_name: String = str(mat_data.get("display_name", mat_id))
-			return "拾取材料：%s" % mat_name
+			return "撿到材料：%s" % mat_name
 	return ""
 
 

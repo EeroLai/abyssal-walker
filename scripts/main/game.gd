@@ -22,7 +22,6 @@ var equipment_panel: EquipmentPanel = null
 var skill_link_panel: SkillLinkPanel = null
 var crafting_panel: CraftingPanel = null
 var module_panel: ModulePanel = null
-var floor_reward_panel: FloorRewardPanel = null
 
 var player: Player = null
 var current_floor: int = 1
@@ -36,7 +35,6 @@ var elite_kills_on_floor: int = 0
 var boss_kills_on_floor: int = 0
 var required_elite_kills: int = 0
 var required_boss_kills: int = 0
-var milestone_reward_claimed: Dictionary = {}
 
 enum ProgressionMode {
 	PUSHING,
@@ -55,12 +53,14 @@ enum FloorObjectiveType {
 var floor_objective_type: int = FloorObjectiveType.CLEAR_ALL
 var _camera_shake_tween: Tween = null
 var _camera_base_offset: Vector2 = Vector2.ZERO
+var _extraction_window_active: bool = false
+var _extraction_selected: bool = false
+var _extraction_decided: bool = false
 
 const GEM_DROP_CHANCE := 0.01
 const MATERIAL_DROP_CHANCE := 0.12
-const FLOOR_MILESTONE_INTERVAL := 10
-const FLOOR_MILESTONE_START := 20
 const MAX_DEATHS_PER_FLOOR := 3
+const EXTRACTION_WINDOW_DURATION := 10.0
 const STARTER_BACKUP_WEAPON_IDS: Array[String] = [
 	"iron_dagger",
 	"short_bow",
@@ -94,12 +94,11 @@ func _load_scenes() -> void:
 	if module_panel_scene == null:
 		module_panel_scene = preload("res://scenes/ui/module_panel.tscn")
 
-	# 創建裝備面板
+	# Setup UI panels
 	_setup_equipment_panel()
 	_setup_skill_link_panel()
 	_setup_crafting_panel()
 	_setup_module_panel()
-	_setup_floor_reward_panel()
 
 
 func _setup_equipment_panel() -> void:
@@ -130,11 +129,6 @@ func _setup_module_panel() -> void:
 	module_panel.navigate_to.connect(_on_panel_navigate)
 
 
-func _setup_floor_reward_panel() -> void:
-	floor_reward_panel = FloorRewardPanel.new()
-	ui_layer.add_child(floor_reward_panel)
-
-
 func _connect_signals() -> void:
 	EventBus.damage_dealt.connect(_on_damage_dealt)
 	EventBus.player_died.connect(_on_player_died)
@@ -161,8 +155,6 @@ func _spawn_player() -> void:
 
 	add_child(player)
 	_configure_player_camera()
-
-	# 給玩家初始裝備和技能
 	_setup_initial_build()
 
 
@@ -190,13 +182,12 @@ func _configure_player_camera() -> void:
 
 
 func _setup_initial_build() -> void:
-	# 初始武器：鐵劍
 	var weapon: EquipmentData = ItemGenerator.generate_equipment("iron_sword", StatTypes.Rarity.WHITE, 1)
 	if weapon:
 		player.equip(weapon)
 	_grant_starter_backup_weapons()
 
-	# 初始技能寶石（放進技能背包）
+	# Starter skill gems
 	for id in DataManager.get_starter_skill_gem_ids():
 		var gem := DataManager.create_skill_gem(id)
 		if gem:
@@ -204,19 +195,19 @@ func _setup_initial_build() -> void:
 	if debug_grant_all_skill_gems:
 		_grant_all_skill_gems_for_testing()
 
-	# 初始輔助寶石（放進輔助背包）
+	# Starter support gems
 	for id in DataManager.get_starter_support_gem_ids():
 		var support := DataManager.create_support_gem(id)
 		if support:
 			player.add_support_gem_to_inventory(support)
 
-	# 初始模組（放進背包）
+	# Starter modules
 	for id in DataManager.get_starter_module_ids():
 		var mod := DataManager.create_module(id)
 		if mod:
 			player.add_module_to_inventory(mod)
 
-	# 初始材料（測試用）
+	# Starter crafting materials
 	player.add_material("alter", 5)
 	player.add_material("augment", 5)
 	player.add_material("refine", 5)
@@ -262,22 +253,21 @@ func _start_floor(floor_number: int) -> void:
 	required_boss_kills = 0
 	floor_objective_type = FloorObjectiveType.CLEAR_ALL
 
-	# 載入層數配置
 	var config: Dictionary = DataManager.get_floor_config(floor_number)
 	if config.is_empty():
 		config = DataManager.get_floor_config(1)
 	config = config.duplicate(true)
 	_configure_floor_objective(floor_number, config)
 
-	# 設定並生成敵人
 	enemy_spawner.setup(config, player)
 	enemy_spawner.set_floor_number(floor_number)
 	enemy_spawner.spawn_wave()
 
 	is_floor_active = true
 
-	# 更新 HUD
 	_update_hud()
+	if hud != null and hud.has_method("set_extraction_prompt"):
+		hud.set_extraction_prompt(false, "")
 	_update_progression_hud()
 
 
@@ -292,9 +282,9 @@ func _configure_floor_objective(floor_number: int, config: Dictionary) -> void:
 func _objective_text() -> String:
 	match floor_objective_type:
 		FloorObjectiveType.BOSS_KILL:
-			return "目標：擊殺BOSS（%d/%d）" % [boss_kills_on_floor, required_boss_kills]
+			return "目標：擊殺 Boss（%d/%d）" % [boss_kills_on_floor, required_boss_kills]
 		FloorObjectiveType.CLEAR_AND_ELITE:
-			return "目標：清層並擊殺菁英（%d/%d）" % [elite_kills_on_floor, required_elite_kills]
+			return "目標：清場並擊殺菁英（%d/%d）" % [elite_kills_on_floor, required_elite_kills]
 		_:
 			return "目標：清除所有敵人"
 
@@ -302,21 +292,21 @@ func _objective_text() -> String:
 func _progression_mode_text() -> String:
 	match progression_mode:
 		ProgressionMode.FARMING:
-			return "模式：刷圖中"
+			return "模式：農層"
 		ProgressionMode.RETRYING:
-			return "模式：重試中"
+			return "模式：重試"
 		_:
-			return "模式：推進中"
+			return "模式：推進"
 
 
 func _update_progression_hud() -> void:
 	if hud == null:
 		return
 	var deaths_left: int = maxi(0, MAX_DEATHS_PER_FLOOR - floor_death_count)
-	var primary := "%s   剩餘死亡：%d" % [_objective_text(), deaths_left]
-	var secondary := "刷圖目標層：%d（- / =）" % preferred_farm_floor
+	var primary := "%s   剩餘命數：%d" % [_objective_text(), deaths_left]
+	var secondary := "農層目標：%d（- / =）" % preferred_farm_floor
 	if pending_failed_floor > 0:
-		secondary += "   待重試層：%d（N）" % pending_failed_floor
+		secondary += "   待重試樓層：%d（N）" % pending_failed_floor
 	if hud.has_method("set_progression_display"):
 		hud.set_progression_display(_progression_mode_text(), primary, secondary)
 	elif hud.has_method("set_progression_status"):
@@ -330,7 +320,6 @@ func _on_damage_dealt(source: Node, target: Node, damage_info: Dictionary) -> vo
 	var element: StatTypes.Element = damage_info.get("element", StatTypes.Element.PHYSICAL)
 	var final_damage: float = float(damage_info.get("final_damage", damage_info.get("damage", 0.0)))
 
-	# 傷害數字
 	if damage_number_scene and target:
 		var dmg_node: Node = damage_number_scene.instantiate()
 		var dmg_num: DamageNumber = dmg_node as DamageNumber
@@ -344,13 +333,11 @@ func _on_damage_dealt(source: Node, target: Node, damage_info: Dictionary) -> vo
 		)
 		add_child(dmg_num)
 
-	# 命中特效
 	var effect: HitEffect = HIT_EFFECT_SCENE.instantiate()
 	effect.global_position = pos
 	effect.setup(StatTypes.ELEMENT_COLORS.get(element, Color.WHITE))
 	add_child(effect)
 
-	# 玩家暴擊時做輕微鏡頭震動
 	var is_crit: bool = bool(damage_info.get("is_crit", false))
 	if is_crit and source == player and _is_player_melee_context():
 		_play_crit_camera_shake()
@@ -387,17 +374,18 @@ func _on_enemy_died(enemy: Node, position: Vector2) -> void:
 	if enemy_base != null:
 		if enemy_base.is_boss:
 			boss_kills_on_floor += 1
+			GameManager.add_boss_kill_risk()
 		elif enemy_base.is_elite:
 			elite_kills_on_floor += 1
+			GameManager.add_elite_kill_risk()
 
-	# 掉落物品（簡化版）
-	if randf() < 0.14:  # 14% 機率掉落裝備
+	if randf() < 0.14:  # 14% equipment drop chance
 		_drop_item(position)
-	if randf() < GEM_DROP_CHANCE:  # 1.0% 機率掉落寶石
+	if randf() < GEM_DROP_CHANCE:  # 1.0% gem drop chance
 		_drop_gem(position)
-	if randf() < MATERIAL_DROP_CHANCE:  # 12% 機率掉落材料
+	if randf() < MATERIAL_DROP_CHANCE:  # 12% material drop chance
 		_drop_material(position)
-	if randf() < 0.012:  # 1.2% 機率掉落模組
+	if randf() < 0.012:  # 1.2% module drop chance
 		_drop_module(position)
 
 	_update_progression_hud()
@@ -406,14 +394,13 @@ func _on_enemy_died(enemy: Node, position: Vector2) -> void:
 
 
 func _drop_item(position: Vector2) -> void:
-	# 隨機選擇一個欄位（權重：武器/護甲較常見，飾品較少）
 	var slots: Array[StatTypes.EquipmentSlot] = [
 		StatTypes.EquipmentSlot.MAIN_HAND,
-		StatTypes.EquipmentSlot.MAIN_HAND,  # 武器權重 x2
+		StatTypes.EquipmentSlot.MAIN_HAND,  # weapon weight x2
 		StatTypes.EquipmentSlot.OFF_HAND,
 		StatTypes.EquipmentSlot.HELMET,
 		StatTypes.EquipmentSlot.ARMOR,
-		StatTypes.EquipmentSlot.ARMOR,  # 護甲權重 x2
+		StatTypes.EquipmentSlot.ARMOR,  # armor weight x2
 		StatTypes.EquipmentSlot.GLOVES,
 		StatTypes.EquipmentSlot.BOOTS,
 		StatTypes.EquipmentSlot.BELT,
@@ -429,14 +416,6 @@ func _drop_item(position: Vector2) -> void:
 
 func _drop_gem(position: Vector2) -> void:
 	var level: int = _roll_gem_drop_level(current_floor)
-	var gem: Resource = _create_random_gem(level)
-	if gem != null:
-		_spawn_dropped_item(gem, position)
-
-
-func _drop_milestone_gem(position: Vector2, floor_number: int) -> void:
-	var level: int = _roll_gem_drop_level(floor_number)
-	level = clampi(level + 2, 1, Constants.MAX_GEM_LEVEL)
 	var gem: Resource = _create_random_gem(level)
 	if gem != null:
 		_spawn_dropped_item(gem, position)
@@ -463,54 +442,6 @@ func _create_random_gem(level: int) -> Resource:
 		support.level = level
 		support.experience = 0.0
 	return support
-
-
-func _build_milestone_reward_choices(floor_number: int) -> Array[Resource]:
-	var result: Array[Resource] = []
-	var level: int = clampi(_roll_gem_drop_level(floor_number) + 2, 1, Constants.MAX_GEM_LEVEL)
-	var used: Dictionary = {}
-	var attempts: int = 0
-	while result.size() < 3 and attempts < 24:
-		attempts += 1
-		var candidate: Resource = _create_random_gem(level)
-		if candidate == null:
-			continue
-		var key: String = ""
-		if candidate is SkillGem:
-			var s: SkillGem = candidate
-			key = "skill:%s:%d" % [s.id, s.level]
-		elif candidate is SupportGem:
-			var sp: SupportGem = candidate
-			key = "support:%s:%d" % [sp.id, sp.level]
-		else:
-			continue
-		if used.has(key):
-			continue
-		used[key] = true
-		result.append(candidate)
-	return result
-
-
-func _grant_selected_reward_gem(gem: Resource) -> void:
-	if gem == null:
-		return
-	if try_pickup_item(gem):
-		return
-	var reward_pos := player.global_position if player != null else Vector2.ZERO
-	_spawn_dropped_item(gem, reward_pos)
-
-
-func _show_milestone_reward_selection(floor_number: int) -> void:
-	if floor_reward_panel == null:
-		return
-	var rewards: Array[Resource] = _build_milestone_reward_choices(floor_number)
-	if rewards.is_empty():
-		var reward_pos := player.global_position if player != null else Vector2.ZERO
-		_drop_milestone_gem(reward_pos, floor_number)
-		return
-	floor_reward_panel.open_with_rewards(floor_number, rewards)
-	var selected: Resource = await floor_reward_panel.reward_selected
-	_grant_selected_reward_gem(selected)
 
 
 func _roll_gem_drop_level(floor_number: int) -> int:
@@ -595,11 +526,13 @@ func _on_floor_objective_completed() -> void:
 		return
 	is_floor_active = false
 	enemy_spawner.clear_enemies()
+	GameManager.add_floor_clear_risk()
 	var cleared_floor: int = current_floor
-	if cleared_floor >= FLOOR_MILESTONE_START and cleared_floor % FLOOR_MILESTONE_INTERVAL == 0 and not milestone_reward_claimed.get(cleared_floor, false):
-		await _show_milestone_reward_selection(cleared_floor)
-		milestone_reward_claimed[cleared_floor] = true
-		print("[FloorReward] floor=%d milestone choice completed" % cleared_floor)
+	if GameManager.should_open_extraction_window(cleared_floor):
+		var extracted: bool = await _run_extraction_window(cleared_floor)
+		if extracted:
+			_reset_after_extraction()
+			return
 	if _is_in_farm_recovery_phase():
 		progression_mode = ProgressionMode.FARMING
 		floor_death_count = 0
@@ -642,17 +575,20 @@ func _replay_current_floor() -> void:
 func _on_player_died() -> void:
 	is_floor_active = false
 	awaiting_floor_choice = false
+	_extraction_window_active = false
+	_extraction_selected = false
 	enemy_spawner.clear_enemies()
 	floor_death_count += 1
 
-	# 顯示失敗 UI
 	var deaths_left: int = maxi(0, MAX_DEATHS_PER_FLOOR - floor_death_count)
 	print("Player died on floor %d (deaths left: %d)" % [current_floor, deaths_left])
+	var loss_summary := GameManager.apply_death_material_penalty(player)
+	if int(loss_summary.get("lost", 0)) > 0:
+		print("[RunFail] Material loss=%d keep=%d" % [int(loss_summary.get("lost", 0)), int(loss_summary.get("kept", 0))])
 	_update_progression_hud()
 	var restart_floor: int = current_floor
 	if floor_death_count >= MAX_DEATHS_PER_FLOOR:
 		if progression_mode == ProgressionMode.FARMING:
-			# 刷圖期死亡不覆蓋待重試樓層，固定回刷圖層繼續養成。
 			restart_floor = preferred_farm_floor
 			floor_death_count = 0
 			print("[FloorFail] Farming floor failed, restart farm floor %d" % restart_floor)
@@ -665,7 +601,6 @@ func _on_player_died() -> void:
 			restart_floor = preferred_farm_floor
 			print("[FloorFail] Trial failed on floor %d, fallback to selected floor %d" % [current_floor, restart_floor])
 
-	# 延遲後重生
 	await get_tree().create_timer(2.0).timeout
 	_respawn_player(restart_floor)
 
@@ -677,8 +612,8 @@ func try_pickup_item(item_data: Variant) -> bool:
 	if item_data is EquipmentData:
 		var equipment: EquipmentData = item_data
 		if player.add_to_inventory(equipment):
-			var rarity_name: String = StatTypes.RARITY_NAMES.get(equipment.rarity, "未知")
-			print("Picked up: %s [%s]" % [equipment.display_name, rarity_name])
+			var rarity_name: String = StatTypes.RARITY_NAMES.get(equipment.rarity, "Unknown")
+			print("撿到裝備：%s [%s]" % [equipment.display_name, rarity_name])
 			EventBus.item_picked_up.emit(equipment)
 			return true
 		print("Inventory full: %s" % equipment.display_name)
@@ -687,7 +622,7 @@ func try_pickup_item(item_data: Variant) -> bool:
 	if item_data is SkillGem:
 		var gem: SkillGem = item_data
 		if player.add_skill_gem_to_inventory(gem):
-			print("Picked up Skill Gem: %s" % gem.display_name)
+			print("撿到技能寶石：%s" % gem.display_name)
 			EventBus.item_picked_up.emit(gem)
 			return true
 		print("Skill Gem inventory full: %s" % gem.display_name)
@@ -696,7 +631,7 @@ func try_pickup_item(item_data: Variant) -> bool:
 	if item_data is SupportGem:
 		var support: SupportGem = item_data
 		if player.add_support_gem_to_inventory(support):
-			print("Picked up Support Gem: %s" % support.display_name)
+			print("撿到輔助寶石：%s" % support.display_name)
 			EventBus.item_picked_up.emit(support)
 			return true
 		print("Support Gem inventory full: %s" % support.display_name)
@@ -705,7 +640,7 @@ func try_pickup_item(item_data: Variant) -> bool:
 	if item_data is Module:
 		var mod: Module = item_data
 		if player.add_module_to_inventory(mod):
-			print("Picked up Module: %s (?? %d)" % [mod.display_name, mod.load_cost])
+			print("撿到模組：%s（負載 %d）" % [mod.display_name, mod.load_cost])
 			EventBus.item_picked_up.emit(mod)
 			return true
 		print("Module inventory full: %s" % mod.display_name)
@@ -718,7 +653,7 @@ func try_pickup_item(item_data: Variant) -> bool:
 			player.add_material(mat_id, amount)
 			var mat_data: Dictionary = DataManager.get_crafting_material(mat_id)
 			var name: String = mat_data.get("display_name", mat_id)
-			print("Picked up Material: %s x%d" % [name, amount])
+			print("撿到材料：%s x%d" % [name, amount])
 			EventBus.item_picked_up.emit({
 				"material_id": mat_id,
 				"amount": amount,
@@ -736,10 +671,8 @@ func _respawn_player(target_floor: int = -1) -> void:
 
 	GameManager.resume_playing()
 	var floor_to_start: int = current_floor if target_floor < 1 else target_floor
-	# 退層後重新給完整死亡次數
 	if floor_to_start != current_floor:
 		floor_death_count = 0
-	# 重新開始當前層
 	_start_floor(floor_to_start)
 
 
@@ -802,8 +735,17 @@ func _update_hud() -> void:
 
 
 func _input(event: InputEvent) -> void:
-	# I 鍵開啟/關閉裝備面板
 	if event is InputEventKey and event.pressed and not event.echo:
+		if _extraction_window_active and event.keycode == KEY_E:
+			_extraction_selected = true
+			_extraction_decided = true
+			get_viewport().set_input_as_handled()
+			return
+		if _extraction_window_active and event.keycode == KEY_F:
+			_extraction_selected = false
+			_extraction_decided = true
+			get_viewport().set_input_as_handled()
+			return
 		if event.keycode == KEY_N:
 			_challenge_pending_failed_floor()
 			get_viewport().set_input_as_handled()
@@ -831,6 +773,41 @@ func _input(event: InputEvent) -> void:
 			_pickup_all_items()
 
 
+func _run_extraction_window(floor_number: int) -> bool:
+	_extraction_window_active = true
+	_extraction_selected = false
+	_extraction_decided = false
+	GameManager.open_extraction_window(floor_number, EXTRACTION_WINDOW_DURATION)
+
+	var elapsed: float = 0.0
+	while elapsed < EXTRACTION_WINDOW_DURATION and _extraction_decided == false:
+		var remaining_sec: int = maxi(0, int(ceili(EXTRACTION_WINDOW_DURATION - elapsed)))
+		if hud != null and hud.has_method("set_extraction_prompt"):
+			hud.set_extraction_prompt(
+				true,
+				"撤離窗口（剩餘 %d 秒）\n[E] 立即撤離    [F] 直接繼續\n未選擇：時間到自動繼續" % remaining_sec
+			)
+		await get_tree().process_frame
+		elapsed += get_process_delta_time()
+
+	_extraction_window_active = false
+	if hud != null and hud.has_method("set_extraction_prompt"):
+		hud.set_extraction_prompt(false, "")
+	GameManager.close_extraction_window(floor_number, _extraction_selected, player)
+	return _extraction_selected
+
+
+func _reset_after_extraction() -> void:
+	print("[撤離成功] 樓層=%d 風險=%d" % [current_floor, GameManager.risk_score])
+	progression_mode = ProgressionMode.PUSHING
+	floor_death_count = 0
+	pending_failed_floor = 0
+	preferred_farm_floor = 1
+	GameManager.reset_risk()
+	_update_progression_hud()
+	_start_floor(1)
+
+
 func _toggle_equipment_panel() -> void:
 	if equipment_panel == null:
 		return
@@ -842,7 +819,6 @@ func _toggle_equipment_panel() -> void:
 
 
 func _on_equipment_panel_closed() -> void:
-	# 面板關閉時的處理
 	pass
 
 
@@ -857,7 +833,6 @@ func _toggle_skill_link_panel() -> void:
 
 
 func _on_skill_link_panel_closed() -> void:
-	# 面板關閉時的處理
 	pass
 
 
@@ -872,7 +847,6 @@ func _toggle_crafting_panel() -> void:
 
 
 func _on_crafting_panel_closed() -> void:
-	# 面板關閉時的處理
 	pass
 
 
@@ -894,7 +868,6 @@ func _pickup_all_items() -> void:
 	if player == null:
 		return
 
-	# 取得所有掉落物
 	var dropped_items := get_tree().get_nodes_in_group("dropped_items")
 
 	for item in dropped_items:

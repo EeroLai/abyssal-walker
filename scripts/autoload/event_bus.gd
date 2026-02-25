@@ -57,3 +57,8 @@ signal game_loaded
 # 統計數據
 signal kill_count_changed(count: int)
 signal dps_updated(dps: float)
+signal risk_score_changed(new_value: int, tier: int)
+signal extraction_window_opened(floor_number: int, timeout_sec: float)
+signal extraction_window_closed(floor_number: int, extracted: bool)
+signal run_extracted(summary: Dictionary)
+signal run_failed(summary: Dictionary)
