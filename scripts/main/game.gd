@@ -9,6 +9,7 @@ extends Node2D
 @export var crafting_panel_scene: PackedScene
 @export var module_panel_scene: PackedScene
 @export var debug_grant_all_skill_gems: bool = true
+@export var debug_grant_all_support_gems: bool = true
 
 const HIT_EFFECT_SCENE := preload("res://scenes/effects/hit_effect.tscn")
 
@@ -200,6 +201,8 @@ func _setup_initial_build() -> void:
 		var support := DataManager.create_support_gem(id)
 		if support:
 			player.add_support_gem_to_inventory(support)
+	if debug_grant_all_support_gems:
+		_grant_all_support_gems_for_testing()
 
 	# Starter modules
 	for id in DataManager.get_starter_module_ids():
@@ -230,6 +233,16 @@ func _grant_all_skill_gems_for_testing() -> void:
 			player.add_skill_gem_to_inventory(gem)
 
 
+func _grant_all_support_gems_for_testing() -> void:
+	var all_ids := DataManager.get_all_support_gem_ids()
+	for id in all_ids:
+		if _player_has_support_gem_id(id):
+			continue
+		var gem := DataManager.create_support_gem(id)
+		if gem != null:
+			player.add_support_gem_to_inventory(gem)
+
+
 func _player_has_skill_gem_id(id: String) -> bool:
 	if player == null:
 		return false
@@ -238,6 +251,16 @@ func _player_has_skill_gem_id(id: String) -> bool:
 			return true
 	for i in range(Constants.MAX_SKILL_GEM_INVENTORY):
 		var gem := player.get_skill_gem_in_inventory(i)
+		if gem != null and gem.id == id:
+			return true
+	return false
+
+
+func _player_has_support_gem_id(id: String) -> bool:
+	if player == null:
+		return false
+	for i in range(Constants.MAX_SUPPORT_GEM_INVENTORY):
+		var gem := player.get_support_gem_in_inventory(i)
 		if gem != null and gem.id == id:
 			return true
 	return false

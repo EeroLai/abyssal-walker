@@ -516,6 +516,8 @@ func _on_extraction_window_closed(_floor_number: int, _extracted: bool) -> void:
 func _on_run_extracted(summary: Dictionary) -> void:
 	var floor: int = int(summary.get("floor", 0))
 	var risk: int = int(summary.get("risk", 0))
+	_add_feed_entry("run_extracted", "已撤離：樓層 %d（風險 %d）" % [floor, risk], 1, Color(0.7, 1.0, 0.72))
+	return
 	var tier: int = int(summary.get("tier", 0))
 	var carried: int = int(summary.get("materials_carried", 0))
 	_show_run_summary(
@@ -528,6 +530,9 @@ func _on_run_extracted(summary: Dictionary) -> void:
 func _on_run_failed(summary: Dictionary) -> void:
 	var lost: int = int(summary.get("lost", 0))
 	var kept: int = int(summary.get("kept", 0))
+	if lost > 0:
+		_add_feed_entry("run_failed", "挑戰失敗：損失 %d 材料，保留 %d" % [lost, kept], 1, Color(1.0, 0.56, 0.56))
+	return
 	var ratio: float = float(summary.get("keep_ratio", 0.0))
 	var tier: int = int(summary.get("tier", 0))
 	var risk: int = int(summary.get("risk", 0))
