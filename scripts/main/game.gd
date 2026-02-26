@@ -12,6 +12,7 @@ extends Node2D
 @export var debug_grant_all_support_gems: bool = true
 
 const HIT_EFFECT_SCENE := preload("res://scenes/effects/hit_effect.tscn")
+const LOBBY_SCENE_PATH := "res://scenes/main/lobby.tscn"
 
 @onready var player_spawn: Marker2D = $PlayerSpawn
 @onready var enemy_spawner: EnemySpawner = $EnemySpawner
@@ -28,7 +29,6 @@ var player: Player = null
 var current_floor: int = 1
 var is_floor_active: bool = false
 var awaiting_floor_choice: bool = false
-var floor_death_count: int = 0
 var highest_unlocked_floor: int = 1
 var preferred_farm_floor: int = 1
 var pending_failed_floor: int = 0
@@ -57,10 +57,11 @@ var _camera_base_offset: Vector2 = Vector2.ZERO
 var _extraction_window_active: bool = false
 var _extraction_selected: bool = false
 var _extraction_decided: bool = false
+var _run_fail_waiting_return: bool = false
+var _run_fail_return_confirmed: bool = false
 
 const GEM_DROP_CHANCE := 0.01
 const MATERIAL_DROP_CHANCE := 0.12
-const MAX_DEATHS_PER_FLOOR := 3
 const EXTRACTION_WINDOW_DURATION := 10.0
 const STARTER_BACKUP_WEAPON_IDS: Array[String] = [
 	"iron_dagger",
@@ -135,12 +136,10 @@ func _connect_signals() -> void:
 	EventBus.player_died.connect(_on_player_died)
 	EventBus.enemy_died.connect(_on_enemy_died)
 	if hud:
-		if hud.has_signal("decrease_farm_floor_requested"):
-			hud.decrease_farm_floor_requested.connect(_on_decrease_farm_floor_requested)
-		if hud.has_signal("increase_farm_floor_requested"):
-			hud.increase_farm_floor_requested.connect(_on_increase_farm_floor_requested)
 		if hud.has_signal("challenge_failed_floor_requested"):
 			hud.challenge_failed_floor_requested.connect(_on_challenge_failed_floor_requested)
+		if hud.has_signal("run_summary_confirmed"):
+			hud.run_summary_confirmed.connect(_on_run_summary_confirmed)
 
 	if enemy_spawner:
 		enemy_spawner.all_enemies_dead.connect(_on_all_enemies_dead)
@@ -157,6 +156,13 @@ func _spawn_player() -> void:
 	add_child(player)
 	_configure_player_camera()
 	_setup_initial_build()
+	_sync_player_materials_from_stash()
+
+
+func _sync_player_materials_from_stash() -> void:
+	if player == null:
+		return
+	GameManager.sync_player_materials_from_stash(player)
 
 
 func _configure_player_camera() -> void:
@@ -210,11 +216,7 @@ func _setup_initial_build() -> void:
 		if mod:
 			player.add_module_to_inventory(mod)
 
-	# Starter crafting materials
-	player.add_material("alter", 5)
-	player.add_material("augment", 5)
-	player.add_material("refine", 5)
-
+	GameManager.apply_operation_loadout_to_player(player)
 
 func _grant_starter_backup_weapons() -> void:
 	for base_id in STARTER_BACKUP_WEAPON_IDS:
@@ -276,7 +278,8 @@ func _start_floor(floor_number: int) -> void:
 	required_boss_kills = 0
 	floor_objective_type = FloorObjectiveType.CLEAR_ALL
 
-	var config: Dictionary = DataManager.get_floor_config(floor_number)
+	var effective_level: int = GameManager.get_effective_drop_level(floor_number)
+	var config: Dictionary = DataManager.get_floor_config(effective_level)
 	if config.is_empty():
 		config = DataManager.get_floor_config(1)
 	config = config.duplicate(true)
@@ -325,9 +328,9 @@ func _progression_mode_text() -> String:
 func _update_progression_hud() -> void:
 	if hud == null:
 		return
-	var deaths_left: int = maxi(0, MAX_DEATHS_PER_FLOOR - floor_death_count)
+	var deaths_left: int = maxi(0, GameManager.get_lives_left())
 	var primary := "%s   Lives Left: %d" % [_objective_text(), deaths_left]
-	var secondary := "Target Floor: %d (- / +)" % preferred_farm_floor
+	var secondary := "Target Floor: %d" % preferred_farm_floor
 	if pending_failed_floor > 0:
 		secondary += "   Failed Floor: %d (N)" % pending_failed_floor
 	if hud.has_method("set_progression_display"):
@@ -432,13 +435,15 @@ func _drop_item(position: Vector2) -> void:
 	]
 	var slot: StatTypes.EquipmentSlot = slots[randi() % slots.size()]
 
-	var equipment: EquipmentData = ItemGenerator.generate_random_equipment(slot, current_floor)
+	var drop_level: int = GameManager.get_effective_drop_level(current_floor)
+	var equipment: EquipmentData = ItemGenerator.generate_random_equipment(slot, drop_level)
 	if equipment:
 		_spawn_dropped_item(equipment, position)
 
 
 func _drop_gem(position: Vector2) -> void:
-	var level: int = _roll_gem_drop_level(current_floor)
+	var effective_level: int = GameManager.get_effective_drop_level(current_floor)
+	var level: int = _roll_gem_drop_level(effective_level)
 	var gem: Resource = _create_random_gem(level)
 	if gem != null:
 		_spawn_dropped_item(gem, position)
@@ -495,13 +500,70 @@ func _roll_gem_drop_level(floor_number: int) -> int:
 
 
 func _drop_module(position: Vector2) -> void:
-	var ids := DataManager.get_all_module_ids()
-	if ids.is_empty():
+	var effective_level: int = GameManager.get_effective_drop_level(current_floor)
+	var module_id: String = _pick_module_id_for_level(effective_level)
+	if module_id.is_empty():
 		return
-	var id: String = ids[randi() % ids.size()]
-	var mod := DataManager.create_module(id)
+	var mod := DataManager.create_module(module_id)
 	if mod:
 		_spawn_dropped_item(mod, position)
+
+
+func _pick_module_id_for_level(effective_level: int) -> String:
+	var ids := DataManager.get_all_module_ids()
+	if ids.is_empty():
+		return ""
+
+	var target_load: float = _target_module_load(effective_level)
+	var weighted_ids: Array[String] = []
+	var weighted_scores: Array[float] = []
+	var total_weight: float = 0.0
+
+	for module_id in ids:
+		var module_data: Dictionary = DataManager.get_module_data(module_id)
+		if module_data.is_empty():
+			continue
+
+		var load_cost: int = int(module_data.get("load_cost", 0))
+		var is_starter: bool = bool(module_data.get("is_starter", false))
+		var dist := absf(float(load_cost) - target_load)
+		var base_weight := 1.0 / (1.0 + dist * 0.25)
+		if is_starter:
+			base_weight *= 0.35
+		if effective_level >= 70 and load_cost >= 15:
+			base_weight *= 1.4
+		elif effective_level <= 25 and load_cost <= 10:
+			base_weight *= 1.25
+		base_weight = maxf(base_weight, 0.01)
+
+		weighted_ids.append(module_id)
+		weighted_scores.append(base_weight)
+		total_weight += base_weight
+
+	if weighted_ids.is_empty():
+		return ""
+	if total_weight <= 0.0:
+		return weighted_ids[randi() % weighted_ids.size()]
+
+	var roll := randf() * total_weight
+	var cursor := 0.0
+	for i in range(weighted_ids.size()):
+		cursor += weighted_scores[i]
+		if roll <= cursor:
+			return weighted_ids[i]
+	return weighted_ids[weighted_ids.size() - 1]
+
+
+func _target_module_load(effective_level: int) -> float:
+	if effective_level >= 85:
+		return 18.0
+	if effective_level >= 70:
+		return 15.0
+	if effective_level >= 45:
+		return 12.0
+	if effective_level >= 20:
+		return 10.0
+	return 8.0
 
 
 func _drop_material(position: Vector2) -> void:
@@ -558,7 +620,6 @@ func _on_floor_objective_completed() -> void:
 			return
 	if _is_in_farm_recovery_phase():
 		progression_mode = ProgressionMode.FARMING
-		floor_death_count = 0
 		_update_progression_hud()
 		_start_floor(preferred_farm_floor)
 		return
@@ -576,7 +637,6 @@ func _go_to_next_floor() -> void:
 	else:
 		progression_mode = ProgressionMode.PUSHING
 	awaiting_floor_choice = false
-	floor_death_count = 0
 	_update_progression_hud()
 	GameManager.complete_floor()
 	var next_floor: int = current_floor + 1
@@ -586,47 +646,38 @@ func _go_to_next_floor() -> void:
 	_start_floor(next_floor)
 
 
-func _replay_current_floor() -> void:
-	if player == null or player.is_dead:
-		return
-	awaiting_floor_choice = false
-	floor_death_count = 0
-	_update_progression_hud()
-	_start_floor(current_floor)
-
-
 func _on_player_died() -> void:
 	is_floor_active = false
 	awaiting_floor_choice = false
 	_extraction_window_active = false
 	_extraction_selected = false
 	enemy_spawner.clear_enemies()
-	floor_death_count += 1
-
-	var deaths_left: int = maxi(0, MAX_DEATHS_PER_FLOOR - floor_death_count)
-	print("Player died on floor %d (deaths left: %d)" % [current_floor, deaths_left])
-	var loss_summary := GameManager.apply_death_material_penalty(player)
-	if int(loss_summary.get("lost", 0)) > 0:
-		print("[RunFail] Material loss=%d keep=%d" % [int(loss_summary.get("lost", 0)), int(loss_summary.get("kept", 0))])
+	var lives_left: int = GameManager.consume_life()
+	print("Player died on floor %d (lives left: %d)" % [current_floor, lives_left])
 	_update_progression_hud()
-	var restart_floor: int = current_floor
-	if floor_death_count >= MAX_DEATHS_PER_FLOOR:
-		if progression_mode == ProgressionMode.FARMING:
-			restart_floor = preferred_farm_floor
-			floor_death_count = 0
-			print("[FloorFail] Farming floor failed, restart farm floor %d" % restart_floor)
-		else:
-			pending_failed_floor = current_floor
-			progression_mode = ProgressionMode.FARMING
-			var max_allowed_after_fail: int = maxi(1, current_floor - 1)
-			var max_selectable: int = mini(highest_unlocked_floor, max_allowed_after_fail)
-			preferred_farm_floor = clampi(preferred_farm_floor, 1, max_selectable)
-			restart_floor = preferred_farm_floor
-			print("[FloorFail] Trial failed on floor %d, fallback to selected floor %d" % [current_floor, restart_floor])
+	if lives_left <= 0:
+		var loss_summary := GameManager.apply_death_material_penalty(player)
+		var lost_loot: Dictionary = loss_summary.get("loot_lost", {})
+		var lost_equipment: int = int(lost_loot.get("equipment", 0))
+		var lost_gems: int = int(lost_loot.get("total_gems", 0))
+		var lost_modules: int = int(lost_loot.get("modules", 0))
+		print("[RunFail] Loot lost: eq=%d gems=%d modules=%d" % [lost_equipment, lost_gems, lost_modules])
+		GameManager.reset_risk()
+		GameManager.reset_operation()
+		progression_mode = ProgressionMode.PUSHING
+		pending_failed_floor = 0
+		preferred_farm_floor = 1
+		var fail_body := "Lost loot:\n- Equipment: %d\n- Gems: %d\n- Modules: %d" % [
+			lost_equipment,
+			lost_gems,
+			lost_modules,
+		]
+		await _wait_for_run_summary("Run Failed", fail_body)
+		get_tree().change_scene_to_file(LOBBY_SCENE_PATH)
+		return
 
 	await get_tree().create_timer(2.0).timeout
-	_respawn_player(restart_floor)
-
+	_respawn_player()
 
 func try_pickup_item(item_data: Variant) -> bool:
 	if player == null:
@@ -637,6 +688,7 @@ func try_pickup_item(item_data: Variant) -> bool:
 		if player.add_to_inventory(equipment):
 			var rarity_name: String = StatTypes.RARITY_NAMES.get(equipment.rarity, "Unknown")
 			print("Picked equipment: %s [%s]" % [equipment.display_name, rarity_name])
+			GameManager.add_loot_to_run_backpack(equipment)
 			EventBus.item_picked_up.emit(equipment)
 			return true
 		print("Inventory full: %s" % equipment.display_name)
@@ -646,6 +698,7 @@ func try_pickup_item(item_data: Variant) -> bool:
 		var gem: SkillGem = item_data
 		if player.add_skill_gem_to_inventory(gem):
 			print("Picked skill gem: %s" % gem.display_name)
+			GameManager.add_loot_to_run_backpack(gem)
 			EventBus.item_picked_up.emit(gem)
 			return true
 		print("Skill Gem inventory full: %s" % gem.display_name)
@@ -655,6 +708,7 @@ func try_pickup_item(item_data: Variant) -> bool:
 		var support: SupportGem = item_data
 		if player.add_support_gem_to_inventory(support):
 			print("Picked support gem: %s" % support.display_name)
+			GameManager.add_loot_to_run_backpack(support)
 			EventBus.item_picked_up.emit(support)
 			return true
 		print("Support Gem inventory full: %s" % support.display_name)
@@ -664,6 +718,7 @@ func try_pickup_item(item_data: Variant) -> bool:
 		var mod: Module = item_data
 		if player.add_module_to_inventory(mod):
 			print("Picked module: %s (load %d)" % [mod.display_name, mod.load_cost])
+			GameManager.add_loot_to_run_backpack(mod)
 			EventBus.item_picked_up.emit(mod)
 			return true
 		print("Module inventory full: %s" % mod.display_name)
@@ -687,17 +742,14 @@ func try_pickup_item(item_data: Variant) -> bool:
 	return false
 
 
-func _respawn_player(target_floor: int = -1) -> void:
+func _respawn_player() -> void:
 	if player:
 		player.respawn()
 		if player_spawn:
 			player.global_position = player_spawn.global_position
 
 	GameManager.resume_playing()
-	var floor_to_start: int = current_floor if target_floor < 1 else target_floor
-	if floor_to_start != current_floor:
-		floor_death_count = 0
-	_start_floor(floor_to_start)
+	_start_floor(current_floor)
 
 
 func _challenge_pending_failed_floor() -> void:
@@ -709,7 +761,6 @@ func _challenge_pending_failed_floor() -> void:
 	if target > highest_unlocked_floor:
 		return
 	progression_mode = ProgressionMode.RETRYING
-	floor_death_count = 0
 	awaiting_floor_choice = false
 	_update_progression_hud()
 	print("[Progression] Challenge failed floor %d" % target)
@@ -720,36 +771,8 @@ func _is_in_farm_recovery_phase() -> bool:
 	return progression_mode == ProgressionMode.FARMING and pending_failed_floor > 0
 
 
-func _on_decrease_farm_floor_requested() -> void:
-	var target_floor: int = clampi(current_floor - 1, 1, highest_unlocked_floor)
-	_jump_to_floor_immediately(target_floor)
-
-
-func _on_increase_farm_floor_requested() -> void:
-	var target_floor: int = clampi(current_floor + 1, 1, highest_unlocked_floor)
-	_jump_to_floor_immediately(target_floor)
-
-
 func _on_challenge_failed_floor_requested() -> void:
 	_challenge_pending_failed_floor()
-
-
-func _jump_to_floor_immediately(target_floor: int) -> void:
-	if player == null or player.is_dead:
-		return
-	var clamped_target: int = clampi(target_floor, 1, highest_unlocked_floor)
-	preferred_farm_floor = clamped_target
-	if clamped_target == current_floor:
-		_update_progression_hud()
-		return
-	if pending_failed_floor > 0:
-		progression_mode = ProgressionMode.RETRYING if clamped_target == pending_failed_floor else ProgressionMode.FARMING
-	else:
-		progression_mode = ProgressionMode.PUSHING
-	floor_death_count = 0
-	awaiting_floor_choice = false
-	_update_progression_hud()
-	_start_floor(clamped_target)
 
 
 func _update_hud() -> void:
@@ -760,6 +783,10 @@ func _update_hud() -> void:
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
+		if _run_fail_waiting_return and event.keycode == KEY_E:
+			_run_fail_return_confirmed = true
+			get_viewport().set_input_as_handled()
+			return
 		if _extraction_window_active and event.keycode == KEY_E:
 			_extraction_selected = true
 			_extraction_decided = true
@@ -774,16 +801,6 @@ func _input(event: InputEvent) -> void:
 			_challenge_pending_failed_floor()
 			get_viewport().set_input_as_handled()
 			return
-		if event.keycode == KEY_MINUS:
-			_on_decrease_farm_floor_requested()
-			print("[Progression] Jump floor: %d" % preferred_farm_floor)
-			get_viewport().set_input_as_handled()
-			return
-		elif event.keycode == KEY_EQUAL:
-			_on_increase_farm_floor_requested()
-			print("[Progression] Jump floor: %d" % preferred_farm_floor)
-			get_viewport().set_input_as_handled()
-			return
 
 		if event.keycode == KEY_I:
 			_toggle_equipment_panel()
@@ -795,7 +812,6 @@ func _input(event: InputEvent) -> void:
 			_toggle_module_panel()
 		elif event.keycode == KEY_Z:
 			_pickup_all_items()
-
 
 func _run_extraction_window(floor_number: int) -> bool:
 	_extraction_window_active = true
@@ -824,12 +840,42 @@ func _run_extraction_window(floor_number: int) -> bool:
 func _reset_after_extraction() -> void:
 	print("[Extracted] floor=%d risk=%d" % [current_floor, GameManager.risk_score])
 	progression_mode = ProgressionMode.PUSHING
-	floor_death_count = 0
 	pending_failed_floor = 0
 	preferred_farm_floor = 1
+	var summary: Dictionary = GameManager.get_last_run_extracted_summary()
+	var moved: Dictionary = summary.get("loot_moved", {})
+	var moved_equipment: int = int(moved.get("equipment", 0))
+	var moved_gems: int = int(moved.get("total_gems", 0))
+	var moved_modules: int = int(moved.get("modules", 0))
+	var stash_total: int = int(summary.get("stash_total", 0))
 	GameManager.reset_risk()
-	_update_progression_hud()
-	_start_floor(1)
+	GameManager.restore_lives()
+	var extraction_body := "Moved to stash:\n- Equipment: %d\n- Gems: %d\n- Modules: %d\n- Materials in stash: %d" % [
+		moved_equipment,
+		moved_gems,
+		moved_modules,
+		stash_total,
+	]
+	await _wait_for_run_summary("Extraction Success", extraction_body)
+	get_tree().change_scene_to_file(LOBBY_SCENE_PATH)
+
+
+func _on_run_summary_confirmed() -> void:
+	if not _run_fail_waiting_return:
+		return
+	_run_fail_return_confirmed = true
+
+
+func _wait_for_run_summary(title: String, body: String) -> void:
+	_run_fail_waiting_return = true
+	_run_fail_return_confirmed = false
+	if hud != null and hud.has_method("show_run_summary"):
+		hud.show_run_summary(title, body)
+	while not _run_fail_return_confirmed:
+		await get_tree().process_frame
+	_run_fail_waiting_return = false
+	if hud != null and hud.has_method("hide_run_summary"):
+		hud.hide_run_summary()
 
 
 func _toggle_equipment_panel() -> void:

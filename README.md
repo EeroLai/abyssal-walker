@@ -2,9 +2,12 @@
 
 [English](README.md) | [繁體中文](README.zh-TW.md)
 
-`abyssal-walker` is a 2D Action RPG prototype built with Godot 4.
+`abyssal-walker` is a Godot 4 action RPG prototype built around an operation-style risk/reward loop:
 
-This project focuses on fast combat, abyss floor progression, and build crafting through loot, affixes, gems, and modules.
+- Prepare in lobby
+- Enter an operation run
+- Loot and decide whether to extract
+- Bank rewards on extraction, or lose run loot on failure
 
 ## Gameplay Preview
 
@@ -20,68 +23,50 @@ This project focuses on fast combat, abyss floor progression, and build crafting
   <img src="docs/images/screenshot-crafting.png" alt="Crafting" width="31%" />
 </p>
 
-## Game Overview
+## Current Gameplay Loop
 
-You control an auto-attacking hero that pushes deeper floors in the abyss.
-Each run is about:
+1. Enter `Lobby`
+2. Set `Operation Level` and `Lives`
+3. Configure operation loadout from stash loot
+4. Enter run and clear abyss encounters
+5. Collect loot (equipment / skill gems / support gems / modules)
+6. Choose to extract or keep pushing
+7. Confirm run summary and return to lobby
 
-1. Clearing enemies and floor objectives
-2. Picking up loot and upgrade resources
-3. Improving your build through equipment, gems, modules, and crafting
-4. Pushing further, or farming selected floors when progress stalls
+## Core Systems
 
-## Core Features
-
-- Abyss progression with floor objectives and boss milestone floors
-- Push/Farm/Retry flow when a floor fails repeatedly
-- Data-driven enemy, item, affix, gem, module, and floor configs (`data/*.json`)
-- Equipment system with rarity, prefix/suffix affixes, and inventory management
-- Skill Gem + Support Gem link system with modifiers (projectiles, chain, pierce, area, etc.)
-- Module board system with load cost and stat-oriented build choices
-- Crafting materials and item crafting actions (`alter`, `augment`, `refine`)
-- Status effects (`burn`, `freeze`, `shock`, `bleed`) and combat feedback
-- HUD with DPS, kills, loot filter, progression status, and pickup feed
-
-## Current Content Snapshot
-
-- Main playable scene: `scenes/main/game.tscn`
-- Systems:
-  - Combat, projectiles, melee/ranged skill handling
-  - Enemy spawning and wave/floor loop
-  - Loot drop and pickup
-  - Equipment panel
-  - Skill link panel
-  - Crafting panel
-  - Module panel
+- Operation session state (`operation_level`, `danger`, `lives`)
+- Risk-scaled drop quality
+- Run backpack loot (`run_backpack_loot`)
+- Persistent stash loot (`stash_loot`)
+- Persistent stash materials (`stash_materials`)
+- Manual confirm extraction/failure summary flow
+- Data-driven content in `data/*.json`
 
 ## Controls
 
 - `I`: Equipment panel
-- `K`: Skill Link panel
+- `K`: Skill panel
 - `C`: Crafting panel
 - `M`: Module panel
-- `Z`: Pickup nearby items
+- `Z`: Pickup nearby loot
 - `L`: Cycle loot filter
-- `-` / `=`: Decrease/Increase current farm floor
+- `E`: Confirm extraction / confirm summary return
+- `F`: Continue during extraction window
 - `N`: Challenge pending failed floor
-- `Esc` (pause action): Pause/Resume
+- `Esc`: Pause
 
-## Project Structure
+## Main Scenes
 
-- `scenes/main/game.tscn`: main scene
-- `scripts/main`: game flow and floor progression
-- `scripts/entities`: player, enemy, projectile logic
-- `scripts/core`: stats, equipment, gems, modules, status, crafting, loot
-- `scripts/ui`: HUD and system panels
-- `scripts/autoload`: global managers and event flow
-- `data/*.json`: data-driven game content
+- Lobby: `scenes/main/lobby.tscn`
+- Game: `scenes/main/game.tscn`
 
 ## Quick Start
 
 1. Install Godot 4.x
-2. Open this folder as a Godot project
-3. Run `scenes/main/game.tscn`
+2. Open this project folder in Godot
+3. Run the project (entry scene is lobby)
 
 ## Changelog
 
-- See `CHANGELOG.md` for gameplay, balance, and system updates.
+See `CHANGELOG.md`.

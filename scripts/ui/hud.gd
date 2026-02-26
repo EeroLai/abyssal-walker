@@ -1,7 +1,8 @@
-class_name HUD
+﻿class_name HUD
 extends Control
 
 signal challenge_failed_floor_requested
+signal run_summary_confirmed
 
 @onready var floor_label: Label = $FloorLabel
 @onready var hp_bar: ProgressBar = $HPBar
@@ -13,14 +14,18 @@ signal challenge_failed_floor_requested
 @onready var status_icons: HBoxContainer = $StatusIcons
 
 var kills: int = 0
-var active_status_nodes: Dictionary = {}  # status_type -> Control
+var active_status_nodes: Dictionary = {}
 var pickup_feed: VBoxContainer = null
 var _pickup_entries: Array[Dictionary] = []
 var _pickup_labels: Array[Label] = []
 var loot_filter_label: Label = null
+var operation_label: Label = null
 var risk_label: Label = null
 var extraction_prompt_panel: PanelContainer = null
 var extraction_prompt_label: Label = null
+var run_summary_panel: PanelContainer = null
+var run_summary_title: Label = null
+var run_summary_body: RichTextLabel = null
 var progression_mode_label: Label = null
 var progression_primary_label: Label = null
 var progression_secondary_label: Label = null
@@ -38,12 +43,15 @@ const PICKUP_FADE_TIME: float = 0.35
 func _ready() -> void:
 	_create_pickup_feed()
 	_create_loot_filter_label()
+	_create_operation_label()
 	_create_risk_label()
 	_create_extraction_prompt_label()
+	_create_run_summary_panel()
 	_create_progression_labels()
 	_create_damage_vignette()
 	_refresh_loot_filter_label()
 	_on_risk_score_changed(GameManager.risk_score, GameManager.get_risk_tier())
+	_on_operation_session_changed(GameManager.get_operation_summary())
 	_connect_signals()
 
 
@@ -62,6 +70,7 @@ func _connect_signals() -> void:
 	EventBus.status_removed.connect(_on_status_removed)
 	EventBus.loot_filter_changed.connect(_on_loot_filter_changed)
 	EventBus.risk_score_changed.connect(_on_risk_score_changed)
+	EventBus.operation_session_changed.connect(_on_operation_session_changed)
 	EventBus.extraction_window_opened.connect(_on_extraction_window_opened)
 	EventBus.extraction_window_closed.connect(_on_extraction_window_closed)
 	EventBus.run_extracted.connect(_on_run_extracted)
@@ -71,6 +80,10 @@ func _connect_signals() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		var key_event := event as InputEventKey
+		if is_run_summary_visible() and key_event.keycode == KEY_E:
+			run_summary_confirmed.emit()
+			get_viewport().set_input_as_handled()
+			return
 		if key_event.keycode == KEY_L:
 			GameManager.cycle_loot_filter_mode()
 			get_viewport().set_input_as_handled()
@@ -101,7 +114,7 @@ func _on_dps_updated(dps: float) -> void:
 func _on_kill_count_changed(count: int) -> void:
 	kills = count
 	if kills_label:
-		kills_label.text = "擊殺：%d" % kills
+		kills_label.text = "擊殺: %d" % kills
 
 
 func _on_floor_entered(floor_number: int) -> void:
@@ -136,7 +149,7 @@ func set_floor_choice_visible(visible: bool) -> void:
 
 func update_enemy_count(count: int) -> void:
 	if enemy_count_label:
-		enemy_count_label.text = "敵人：%d" % count
+		enemy_count_label.text = "敵人: %d" % count
 
 
 func _on_item_picked_up(_item_data: Variant) -> void:
@@ -155,7 +168,7 @@ func _on_gem_leveled_up(gem: Resource, new_level: int) -> void:
 		var skill := gem as SkillGem
 		_add_feed_entry(
 			"lvl:skill:%s" % skill.id,
-			"技能升級：%s Lv%d" % [skill.display_name, new_level],
+			"技能寶石升級：%s Lv%d" % [skill.display_name, new_level],
 			1,
 			Color(0.4, 1.0, 0.55)
 		)
@@ -163,7 +176,7 @@ func _on_gem_leveled_up(gem: Resource, new_level: int) -> void:
 		var support := gem as SupportGem
 		_add_feed_entry(
 			"lvl:support:%s" % support.id,
-			"輔助升級：%s Lv%d" % [support.display_name, new_level],
+			"輔助寶石升級：%s Lv%d" % [support.display_name, new_level],
 			1,
 			Color(0.45, 0.8, 1.0)
 		)
@@ -171,7 +184,7 @@ func _on_gem_leveled_up(gem: Resource, new_level: int) -> void:
 
 func update_inventory(count: int) -> void:
 	if inventory_label:
-		inventory_label.text = "背包：%d/60" % count
+		inventory_label.text = "背包: %d/60" % count
 
 
 func _on_status_applied(target: Node, status_type: String, stacks: int) -> void:
@@ -329,6 +342,23 @@ func _create_loot_filter_label() -> void:
 	add_child(loot_filter_label)
 
 
+func _create_operation_label() -> void:
+	operation_label = Label.new()
+	operation_label.name = "OperationLabel"
+	operation_label.anchor_left = 1.0
+	operation_label.anchor_top = 0.0
+	operation_label.anchor_right = 1.0
+	operation_label.anchor_bottom = 0.0
+	operation_label.offset_left = -330.0
+	operation_label.offset_top = 58.0
+	operation_label.offset_right = -20.0
+	operation_label.offset_bottom = 80.0
+	operation_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	operation_label.add_theme_font_size_override("font_size", 13)
+	operation_label.modulate = Color(0.72, 0.95, 1.0, 0.95)
+	add_child(operation_label)
+
+
 func _create_risk_label() -> void:
 	risk_label = Label.new()
 	risk_label.name = "RiskLabel"
@@ -337,9 +367,9 @@ func _create_risk_label() -> void:
 	risk_label.anchor_right = 1.0
 	risk_label.anchor_bottom = 0.0
 	risk_label.offset_left = -330.0
-	risk_label.offset_top = 58.0
+	risk_label.offset_top = 80.0
 	risk_label.offset_right = -20.0
-	risk_label.offset_bottom = 80.0
+	risk_label.offset_bottom = 102.0
 	risk_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	risk_label.add_theme_font_size_override("font_size", 13)
 	risk_label.modulate = Color(1.0, 0.88, 0.58, 0.95)
@@ -381,6 +411,57 @@ func _create_extraction_prompt_label() -> void:
 	extraction_prompt_panel.add_child(extraction_prompt_label)
 
 
+func _create_run_summary_panel() -> void:
+	run_summary_panel = PanelContainer.new()
+	run_summary_panel.name = "RunSummaryPanel"
+	run_summary_panel.anchor_left = 0.5
+	run_summary_panel.anchor_top = 0.5
+	run_summary_panel.anchor_right = 0.5
+	run_summary_panel.anchor_bottom = 0.5
+	run_summary_panel.offset_left = -240.0
+	run_summary_panel.offset_top = -140.0
+	run_summary_panel.offset_right = 240.0
+	run_summary_panel.offset_bottom = 140.0
+	run_summary_panel.visible = false
+	run_summary_panel.z_index = 120
+	add_child(run_summary_panel)
+
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.08, 0.08, 0.1, 0.95)
+	style.border_color = Color(0.92, 0.64, 0.28, 0.95)
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(10)
+	style.content_margin_left = 12
+	style.content_margin_right = 12
+	style.content_margin_top = 10
+	style.content_margin_bottom = 10
+	run_summary_panel.add_theme_stylebox_override("panel", style)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 8)
+	run_summary_panel.add_child(vbox)
+
+	run_summary_title = Label.new()
+	run_summary_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	run_summary_title.add_theme_font_size_override("font_size", 18)
+	run_summary_title.text = "Run Summary"
+	vbox.add_child(run_summary_title)
+
+	run_summary_body = RichTextLabel.new()
+	run_summary_body.fit_content = false
+	run_summary_body.scroll_active = true
+	run_summary_body.custom_minimum_size = Vector2(0, 170)
+	run_summary_body.bbcode_enabled = false
+	run_summary_body.text = ""
+	vbox.add_child(run_summary_body)
+
+	var footer := Label.new()
+	footer.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	footer.modulate = Color(0.95, 0.85, 0.65, 1.0)
+	footer.text = "Press [E] to return to Lobby"
+	vbox.add_child(footer)
+
+
 func _create_progression_labels() -> void:
 	progression_panel = PanelContainer.new()
 	progression_panel.name = "ProgressionPanel"
@@ -389,9 +470,9 @@ func _create_progression_labels() -> void:
 	progression_panel.anchor_right = 1.0
 	progression_panel.anchor_bottom = 0.0
 	progression_panel.offset_left = -266.0
-	progression_panel.offset_top = 62.0
+	progression_panel.offset_top = 104.0
 	progression_panel.offset_right = -16.0
-	progression_panel.offset_bottom = 128.0
+	progression_panel.offset_bottom = 170.0
 	add_child(progression_panel)
 
 	var style := StyleBoxFlat.new()
@@ -416,7 +497,7 @@ func _create_progression_labels() -> void:
 
 	progression_mode_label = Label.new()
 	progression_mode_label.name = "ProgressionModeLabel"
-	progression_mode_label.text = "模式：推進"
+	progression_mode_label.text = "模式: 推進"
 	progression_mode_label.add_theme_font_size_override("font_size", 12)
 	progression_mode_label.modulate = Color(0.9, 0.84, 0.58, 0.98)
 	top_row.add_child(progression_mode_label)
@@ -444,7 +525,7 @@ func _create_progression_labels() -> void:
 	vbox.add_child(progression_buttons)
 
 	var btn_retry := Button.new()
-	btn_retry.text = "挑戰失敗樓層"
+	btn_retry.text = "挑戰失敗層"
 	btn_retry.custom_minimum_size = Vector2(108, 22)
 	btn_retry.pressed.connect(func() -> void: challenge_failed_floor_requested.emit())
 	progression_buttons.add_child(btn_retry)
@@ -457,11 +538,21 @@ func _on_loot_filter_changed(_mode: int) -> void:
 func _on_risk_score_changed(new_value: int, tier: int) -> void:
 	if risk_label == null:
 		return
-	risk_label.text = "風險：%d（階段 %d）" % [new_value, tier]
+	risk_label.text = "Risk: %d (Tier %d)" % [new_value, tier]
+
+
+func _on_operation_session_changed(summary: Dictionary) -> void:
+	if operation_label == null:
+		return
+	var operation_level: int = int(summary.get("operation_level", 1))
+	var danger: int = int(summary.get("danger", 0))
+	var lives_left: int = int(summary.get("lives_left", 0))
+	var lives_max: int = int(summary.get("lives_max", 0))
+	operation_label.text = "Operation Lv %d  Danger %d  Lives %d/%d" % [operation_level, danger, lives_left, lives_max]
 
 
 func _on_extraction_window_opened(_floor_number: int, timeout_sec: float) -> void:
-	set_extraction_prompt(true, "[E] 立即撤離（%d 秒）" % int(timeout_sec))
+	set_extraction_prompt(true, "[E] 撤離   [F] 繼續\n剩餘 %d 秒" % int(timeout_sec))
 
 
 func _on_extraction_window_closed(_floor_number: int, _extracted: bool) -> void:
@@ -471,15 +562,44 @@ func _on_extraction_window_closed(_floor_number: int, _extracted: bool) -> void:
 func _on_run_extracted(summary: Dictionary) -> void:
 	var floor: int = int(summary.get("floor", 0))
 	var risk: int = int(summary.get("risk", 0))
-	_add_feed_entry("run_extracted", "已撤離：樓層 %d（風險 %d）" % [floor, risk], 1, Color(0.7, 1.0, 0.72))
+	var stash_total: int = int(summary.get("stash_total", 0))
+	var moved: Dictionary = summary.get("loot_moved", {})
+	var moved_equipment: int = int(moved.get("equipment", 0))
+	var moved_gems: int = int(moved.get("total_gems", 0))
+	var moved_modules: int = int(moved.get("modules", 0))
+	_add_feed_entry(
+		"run_extracted",
+		"成功撤離：深淵 %d 層，Risk %d，入庫 裝%d/寶石%d/模組%d，材料倉庫 %d" % [
+			floor,
+			risk,
+			moved_equipment,
+			moved_gems,
+			moved_modules,
+			stash_total,
+		],
+		1,
+		Color(0.7, 1.0, 0.72)
+	)
 
 
 func _on_run_failed(summary: Dictionary) -> void:
 	var lost: int = int(summary.get("lost", 0))
 	var kept: int = int(summary.get("kept", 0))
-	if lost <= 0:
-		return
-	_add_feed_entry("run_failed", "挑戰失敗：損失 %d 材料，保留 %d" % [lost, kept], 1, Color(1.0, 0.56, 0.56))
+	var lost_loot: Dictionary = summary.get("loot_lost", {})
+	var lost_equipment: int = int(lost_loot.get("equipment", 0))
+	var lost_gems: int = int(lost_loot.get("total_gems", 0))
+	var lost_modules: int = int(lost_loot.get("modules", 0))
+	_add_feed_entry(
+		"run_failed",
+		"行動失敗：失去戰利品 裝%d/寶石%d/模組%d（材料保留 %d）" % [
+			lost_equipment,
+			lost_gems,
+			lost_modules,
+			kept,
+		],
+		1,
+		Color(1.0, 0.56, 0.56)
+	)
 
 
 func set_extraction_prompt(visible: bool, text: String) -> void:
@@ -489,10 +609,28 @@ func set_extraction_prompt(visible: bool, text: String) -> void:
 	extraction_prompt_label.text = text
 
 
+func show_run_summary(title: String, body_text: String) -> void:
+	if run_summary_panel == null:
+		return
+	run_summary_title.text = title
+	run_summary_body.text = body_text
+	run_summary_panel.visible = true
+
+
+func hide_run_summary() -> void:
+	if run_summary_panel == null:
+		return
+	run_summary_panel.visible = false
+
+
+func is_run_summary_visible() -> bool:
+	return run_summary_panel != null and run_summary_panel.visible
+
+
 func _refresh_loot_filter_label() -> void:
 	if loot_filter_label == null:
 		return
-	loot_filter_label.text = "[L] 掉落篩選：%s" % GameManager.get_loot_filter_name()
+	loot_filter_label.text = "[L] 掉落過濾: %s" % GameManager.get_loot_filter_name()
 
 
 func _show_pickup_message(item_data: Variant) -> void:
@@ -540,23 +678,22 @@ func _add_feed_entry(key: String, text: String, increment: int, color: Color) ->
 func _pickup_text(item_data: Variant) -> String:
 	if item_data is EquipmentData:
 		var eq := item_data as EquipmentData
-		return "撿到裝備：%s" % eq.display_name
+		return "拾取裝備：%s" % eq.display_name
 	if item_data is SkillGem:
 		var gem := item_data as SkillGem
-		return "撿到技能寶石：%s" % gem.display_name
+		return "拾取技能寶石：%s" % gem.display_name
 	if item_data is SupportGem:
 		var support := item_data as SupportGem
-		return "撿到輔助寶石：%s" % support.display_name
+		return "拾取輔助寶石：%s" % support.display_name
 	if item_data is Module:
 		var mod := item_data as Module
-		return "撿到模組：%s" % mod.display_name
+		return "拾取模組：%s" % mod.display_name
 	if item_data is Dictionary:
 		var mat_id: String = str(item_data.get("material_id", ""))
-		var amount: int = int(item_data.get("amount", 1))
 		if mat_id != "":
 			var mat_data: Dictionary = DataManager.get_crafting_material(mat_id)
 			var mat_name: String = str(mat_data.get("display_name", mat_id))
-			return "撿到材料：%s" % mat_name
+			return "拾取材料：%s" % mat_name
 	return ""
 
 

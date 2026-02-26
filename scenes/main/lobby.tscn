@@ -1,0 +1,197 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/main/lobby.gd" id="1_lobby"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_panel"]
+bg_color = Color(0.07, 0.08, 0.11, 0.95)
+border_color = Color(0.26, 0.32, 0.42, 0.95)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+content_margin_left = 16.0
+content_margin_top = 16.0
+content_margin_right = 16.0
+content_margin_bottom = 16.0
+
+[node name="Lobby" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_lobby")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.04, 0.05, 0.08, 1)
+
+[node name="RootPanel" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -520.0
+offset_top = -320.0
+offset_right = 520.0
+offset_bottom = 320.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
+
+[node name="Content" type="VBoxContainer" parent="RootPanel"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Title" type="Label" parent="RootPanel/Content"]
+layout_mode = 2
+text = "Abyssal Walker"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 30
+
+[node name="Subtitle" type="Label" parent="RootPanel/Content"]
+layout_mode = 2
+text = "行動大廳"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 18
+
+[node name="ConfigRow" type="HBoxContainer" parent="RootPanel/Content"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="OperationLevelText" type="Label" parent="RootPanel/Content/ConfigRow"]
+layout_mode = 2
+text = "Operation Level"
+
+[node name="OperationLevelSpin" type="SpinBox" parent="RootPanel/Content/ConfigRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="LivesText" type="Label" parent="RootPanel/Content/ConfigRow"]
+layout_mode = 2
+text = "Lives"
+
+[node name="LivesSpin" type="SpinBox" parent="RootPanel/Content/ConfigRow"]
+layout_mode = 2
+size_flags_horizontal = 1
+
+[node name="SummaryRow" type="HBoxContainer" parent="RootPanel/Content"]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="SummaryLeft" type="VBoxContainer" parent="RootPanel/Content/SummaryRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="StashTotalLabel" type="Label" parent="RootPanel/Content/SummaryRow/SummaryLeft"]
+layout_mode = 2
+text = "倉庫材料總量: 0"
+
+[node name="StashMaterialList" type="RichTextLabel" parent="RootPanel/Content/SummaryRow/SummaryLeft"]
+custom_minimum_size = Vector2(0, 96)
+layout_mode = 2
+fit_content = false
+scroll_active = true
+text = "- 無"
+
+[node name="SummaryRight" type="VBoxContainer" parent="RootPanel/Content/SummaryRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="StashLootTotalLabel" type="Label" parent="RootPanel/Content/SummaryRow/SummaryRight"]
+layout_mode = 2
+text = "倉庫戰利品: 裝備 0 / 寶石 0 / 模組 0"
+
+[node name="LoadoutTotalLabel" type="Label" parent="RootPanel/Content/SummaryRow/SummaryRight"]
+layout_mode = 2
+text = "出戰配置: 裝備 0 / 寶石 0 / 模組 0"
+
+[node name="LootRow" type="HBoxContainer" parent="RootPanel/Content"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 12
+
+[node name="StashSide" type="VBoxContainer" parent="RootPanel/Content/LootRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 6
+
+[node name="StashTitle" type="Label" parent="RootPanel/Content/LootRow/StashSide"]
+layout_mode = 2
+text = "倉庫戰利品"
+
+[node name="StashCategory" type="OptionButton" parent="RootPanel/Content/LootRow/StashSide"]
+layout_mode = 2
+
+[node name="StashList" type="ItemList" parent="RootPanel/Content/LootRow/StashSide"]
+custom_minimum_size = Vector2(0, 220)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ActionSide" type="VBoxContainer" parent="RootPanel/Content/LootRow"]
+layout_mode = 2
+theme_override_constants/separation = 10
+alignment = 1
+
+[node name="AddButton" type="Button" parent="RootPanel/Content/LootRow/ActionSide"]
+layout_mode = 2
+text = "加入出戰 ->"
+custom_minimum_size = Vector2(120, 36)
+
+[node name="RemoveButton" type="Button" parent="RootPanel/Content/LootRow/ActionSide"]
+layout_mode = 2
+text = "<- 移回倉庫"
+custom_minimum_size = Vector2(120, 36)
+
+[node name="ClearLoadoutButton" type="Button" parent="RootPanel/Content/LootRow/ActionSide"]
+layout_mode = 2
+text = "清空出戰"
+custom_minimum_size = Vector2(120, 32)
+
+[node name="LoadoutSide" type="VBoxContainer" parent="RootPanel/Content/LootRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 6
+
+[node name="LoadoutTitle" type="Label" parent="RootPanel/Content/LootRow/LoadoutSide"]
+layout_mode = 2
+text = "出戰配置"
+
+[node name="LoadoutCategory" type="OptionButton" parent="RootPanel/Content/LootRow/LoadoutSide"]
+layout_mode = 2
+
+[node name="LoadoutList" type="ItemList" parent="RootPanel/Content/LootRow/LoadoutSide"]
+custom_minimum_size = Vector2(0, 220)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ButtonsRow" type="HBoxContainer" parent="RootPanel/Content"]
+layout_mode = 2
+alignment = 1
+theme_override_constants/separation = 12
+
+[node name="StartButton" type="Button" parent="RootPanel/Content/ButtonsRow"]
+layout_mode = 2
+text = "開始行動"
+custom_minimum_size = Vector2(150, 42)
+
+[node name="QuitButton" type="Button" parent="RootPanel/Content/ButtonsRow"]
+layout_mode = 2
+text = "離開"
+custom_minimum_size = Vector2(110, 42)

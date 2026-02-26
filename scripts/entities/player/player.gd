@@ -242,7 +242,10 @@ func add_material(id: String, amount: int = 1) -> void:
 	if amount <= 0:
 		return
 	var current: int = int(materials.get(id, 0))
-	materials[id] = current + amount
+	var next_count: int = current + amount
+	materials[id] = next_count
+	if GameManager != null and GameManager.has_method("set_stash_material_count"):
+		GameManager.set_stash_material_count(id, next_count)
 
 
 func consume_material(id: String, amount: int = 1) -> bool:
@@ -251,7 +254,10 @@ func consume_material(id: String, amount: int = 1) -> bool:
 	var current: int = int(materials.get(id, 0))
 	if current < amount:
 		return false
-	materials[id] = current - amount
+	var next_count: int = current - amount
+	materials[id] = next_count
+	if GameManager != null and GameManager.has_method("set_stash_material_count"):
+		GameManager.set_stash_material_count(id, next_count)
 	return true
 
 

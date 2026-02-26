@@ -1,4 +1,4 @@
-class_name Module
+﻿class_name Module
 extends Resource
 
 enum ModuleType {

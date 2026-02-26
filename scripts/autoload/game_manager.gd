@@ -14,12 +14,21 @@ enum LootFilterMode {
 	GEMS_AND_MODULES,
 }
 
+enum OperationType {
+	NORMAL,
+}
+
 const DPS_WINDOW_DURATION := 5.0
 const RISK_PER_FLOOR_CLEAR: int = 10
 const RISK_PER_ELITE_KILL: int = 8
 const RISK_PER_BOSS_KILL: int = 20
 const RISK_TIER_STEP: int = 25
-const DEATH_MATERIAL_KEEP_RATIO: float = 0.65
+const DEFAULT_OPERATION_LIVES: int = 3
+const STARTER_STASH_MATERIALS: Dictionary = {
+	"alter": 40,
+	"augment": 30,
+	"refine": 20,
+}
 
 var current_state: GameState = GameState.MENU
 var current_floor: int = 1
@@ -28,6 +37,34 @@ var loot_filter_mode: LootFilterMode = LootFilterMode.ALL
 var risk_score: int = 0
 var extraction_interval: int = 3
 var extraction_window_open: bool = false
+var stash_materials: Dictionary = {}
+var stash_loot: Dictionary = {
+	"equipment": [],
+	"skill_gems": [],
+	"support_gems": [],
+	"modules": [],
+}
+var run_backpack_loot: Dictionary = {
+	"equipment": [],
+	"skill_gems": [],
+	"support_gems": [],
+	"modules": [],
+}
+var operation_loadout: Dictionary = {
+	"equipment": [],
+	"skill_gems": [],
+	"support_gems": [],
+	"modules": [],
+}
+var last_run_extracted_summary: Dictionary = {}
+var last_run_failed_summary: Dictionary = {}
+var operation_session: Dictionary = {
+	"operation_level": 1,
+	"operation_type": OperationType.NORMAL,
+	"lives_max": DEFAULT_OPERATION_LIVES,
+	"lives_left": DEFAULT_OPERATION_LIVES,
+	"danger": 0,
+}
 
 var session_stats: Dictionary = {
 	"kills": 0,
@@ -51,6 +88,7 @@ var _damage_window: Array[Dictionary] = []
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_connect_signals()
+	_ensure_starter_stash()
 
 
 func _input(event: InputEvent) -> void:
@@ -78,6 +116,8 @@ func start_game() -> void:
 	is_in_abyss = true
 	_reset_session_stats()
 	reset_risk()
+	if get_lives_left() <= 0:
+		reset_operation()
 
 
 func pause_game() -> void:
@@ -108,6 +148,9 @@ func enter_floor(floor_number: int) -> void:
 
 func complete_floor() -> void:
 	EventBus.floor_cleared.emit(current_floor)
+	add_danger(1)
+	operation_session.operation_level = maxi(int(operation_session.operation_level), current_floor + 1)
+	_emit_operation_session_changed()
 	current_floor += 1
 
 
@@ -120,6 +163,88 @@ func reset_risk() -> void:
 	risk_score = 0
 	extraction_window_open = false
 	EventBus.risk_score_changed.emit(risk_score, get_risk_tier())
+
+
+func start_operation(
+	operation_level: int = 1,
+	operation_type: int = OperationType.NORMAL,
+	lives: int = DEFAULT_OPERATION_LIVES
+) -> void:
+	operation_session = {
+		"operation_level": maxi(1, operation_level),
+		"operation_type": operation_type,
+		"lives_max": maxi(1, lives),
+		"lives_left": maxi(1, lives),
+		"danger": 0,
+	}
+	clear_run_backpack_loot()
+	_emit_operation_session_changed()
+
+
+func reset_operation() -> void:
+	start_operation(1, OperationType.NORMAL, DEFAULT_OPERATION_LIVES)
+
+
+func get_operation_level() -> int:
+	return int(operation_session.get("operation_level", 1))
+
+
+func get_operation_type() -> int:
+	return int(operation_session.get("operation_type", OperationType.NORMAL))
+
+
+func get_lives_max() -> int:
+	return int(operation_session.get("lives_max", DEFAULT_OPERATION_LIVES))
+
+
+func get_lives_left() -> int:
+	return int(operation_session.get("lives_left", DEFAULT_OPERATION_LIVES))
+
+
+func get_danger() -> int:
+	return int(operation_session.get("danger", 0))
+
+
+func add_danger(amount: int) -> void:
+	if amount <= 0:
+		return
+	operation_session.danger = max(0, get_danger() + amount)
+	_emit_operation_session_changed()
+
+
+func consume_life() -> int:
+	var left: int = maxi(0, get_lives_left() - 1)
+	operation_session.lives_left = left
+	_emit_operation_session_changed()
+	return left
+
+
+func restore_lives() -> void:
+	operation_session.lives_left = get_lives_max()
+	_emit_operation_session_changed()
+
+
+func get_effective_drop_level(fallback_floor: int) -> int:
+	var floor_from_operation := get_operation_level() + get_danger()
+	return clampi(maxi(fallback_floor, floor_from_operation), 1, 100)
+
+
+func get_operation_summary() -> Dictionary:
+	return operation_session.duplicate(true)
+
+
+func _emit_operation_session_changed() -> void:
+	EventBus.operation_session_changed.emit(get_operation_summary())
+
+
+func _ensure_starter_stash() -> void:
+	if not stash_materials.is_empty():
+		return
+	for material_id in STARTER_STASH_MATERIALS.keys():
+		var id: String = str(material_id)
+		var amount: int = int(STARTER_STASH_MATERIALS[id])
+		if amount > 0:
+			stash_materials[id] = amount
 
 
 func add_risk(amount: int) -> void:
@@ -135,10 +260,12 @@ func add_floor_clear_risk() -> void:
 
 func add_elite_kill_risk() -> void:
 	add_risk(RISK_PER_ELITE_KILL)
+	add_danger(1)
 
 
 func add_boss_kill_risk() -> void:
 	add_risk(RISK_PER_BOSS_KILL)
+	add_danger(2)
 
 
 func get_risk_tier() -> int:
@@ -162,36 +289,33 @@ func close_extraction_window(floor_number: int, extracted: bool, player: Player 
 	extraction_window_open = false
 	EventBus.extraction_window_closed.emit(floor_number, extracted)
 	if extracted:
-		EventBus.run_extracted.emit({
+		var moved_loot := deposit_run_backpack_loot_to_stash()
+		last_run_extracted_summary = {
 			"floor": floor_number,
 			"risk": risk_score,
 			"tier": get_risk_tier(),
-			"materials_carried": _get_material_total(player),
-		})
+			"materials_carried": 0,
+			"stash_total": get_stash_material_total(),
+			"loot_moved": moved_loot,
+			"stash_loot": get_stash_loot_counts(),
+		}
+		EventBus.run_extracted.emit(last_run_extracted_summary.duplicate(true))
 
 
 func apply_death_material_penalty(player: Player) -> Dictionary:
 	if player == null:
 		return {"kept": 0, "lost": 0}
-	var kept_total: int = 0
-	var lost_total: int = 0
-	for material_id in player.materials.keys():
-		var id: String = str(material_id)
-		var current: int = player.get_material_count(id)
-		if current <= 0:
-			continue
-		var kept: int = int(floor(float(current) * DEATH_MATERIAL_KEEP_RATIO))
-		var lost: int = maxi(0, current - kept)
-		player.materials[id] = kept
-		kept_total += kept
-		lost_total += lost
+	var kept_total: int = _get_material_total(player)
+	var lost_loot := lose_run_backpack_loot()
 	var summary := {
 		"kept": kept_total,
-		"lost": lost_total,
-		"keep_ratio": DEATH_MATERIAL_KEEP_RATIO,
+		"lost": 0,
 		"tier": get_risk_tier(),
 		"risk": risk_score,
+		"stash_total": get_stash_material_total(),
+		"loot_lost": lost_loot,
 	}
+	last_run_failed_summary = summary.duplicate(true)
 	EventBus.run_failed.emit(summary)
 	return summary
 
@@ -202,6 +326,192 @@ func _get_material_total(player: Player) -> int:
 	var total: int = 0
 	for material_id in player.materials.keys():
 		total += player.get_material_count(str(material_id))
+	return total
+
+
+func clear_run_backpack_loot() -> void:
+	run_backpack_loot = {
+		"equipment": [],
+		"skill_gems": [],
+		"support_gems": [],
+		"modules": [],
+	}
+
+
+func clear_operation_loadout() -> void:
+	operation_loadout = {
+		"equipment": [],
+		"skill_gems": [],
+		"support_gems": [],
+		"modules": [],
+	}
+
+
+func add_loot_to_run_backpack(item: Variant) -> void:
+	if item is EquipmentData:
+		run_backpack_loot.equipment.append((item as EquipmentData).duplicate(true))
+	elif item is SkillGem:
+		run_backpack_loot.skill_gems.append((item as SkillGem).duplicate(true))
+	elif item is SupportGem:
+		run_backpack_loot.support_gems.append((item as SupportGem).duplicate(true))
+	elif item is Module:
+		run_backpack_loot.modules.append((item as Module).duplicate(true))
+
+
+func get_run_backpack_loot_counts() -> Dictionary:
+	return {
+		"equipment": int(run_backpack_loot.equipment.size()),
+		"skill_gems": int(run_backpack_loot.skill_gems.size()),
+		"support_gems": int(run_backpack_loot.support_gems.size()),
+		"modules": int(run_backpack_loot.modules.size()),
+		"total_gems": int(run_backpack_loot.skill_gems.size() + run_backpack_loot.support_gems.size()),
+	}
+
+
+func get_stash_loot_counts() -> Dictionary:
+	return {
+		"equipment": int(stash_loot.equipment.size()),
+		"skill_gems": int(stash_loot.skill_gems.size()),
+		"support_gems": int(stash_loot.support_gems.size()),
+		"modules": int(stash_loot.modules.size()),
+		"total_gems": int(stash_loot.skill_gems.size() + stash_loot.support_gems.size()),
+	}
+
+
+func get_operation_loadout_counts() -> Dictionary:
+	return {
+		"equipment": int(operation_loadout.equipment.size()),
+		"skill_gems": int(operation_loadout.skill_gems.size()),
+		"support_gems": int(operation_loadout.support_gems.size()),
+		"modules": int(operation_loadout.modules.size()),
+		"total_gems": int(operation_loadout.skill_gems.size() + operation_loadout.support_gems.size()),
+	}
+
+
+func get_stash_loot_snapshot() -> Dictionary:
+	return {
+		"equipment": stash_loot.equipment.duplicate(true),
+		"skill_gems": stash_loot.skill_gems.duplicate(true),
+		"support_gems": stash_loot.support_gems.duplicate(true),
+		"modules": stash_loot.modules.duplicate(true),
+	}
+
+
+func get_operation_loadout_snapshot() -> Dictionary:
+	return {
+		"equipment": operation_loadout.equipment.duplicate(true),
+		"skill_gems": operation_loadout.skill_gems.duplicate(true),
+		"support_gems": operation_loadout.support_gems.duplicate(true),
+		"modules": operation_loadout.modules.duplicate(true),
+	}
+
+
+func move_stash_loot_to_loadout(category: String, index: int) -> bool:
+	if not stash_loot.has(category) or not operation_loadout.has(category):
+		return false
+	var source: Array = stash_loot[category]
+	if index < 0 or index >= source.size():
+		return false
+	var item = source[index]
+	source.remove_at(index)
+	var target: Array = operation_loadout[category]
+	target.append(item)
+	return true
+
+
+func move_loadout_loot_to_stash(category: String, index: int) -> bool:
+	if not stash_loot.has(category) or not operation_loadout.has(category):
+		return false
+	var source: Array = operation_loadout[category]
+	if index < 0 or index >= source.size():
+		return false
+	var item = source[index]
+	source.remove_at(index)
+	var target: Array = stash_loot[category]
+	target.append(item)
+	return true
+
+
+func apply_operation_loadout_to_player(player: Player) -> void:
+	if player == null:
+		return
+	for item in operation_loadout.equipment:
+		var eq: EquipmentData = item
+		if not player.add_to_inventory(eq):
+			stash_loot.equipment.append(eq)
+	for item in operation_loadout.skill_gems:
+		var gem: SkillGem = item
+		if not player.add_skill_gem_to_inventory(gem):
+			stash_loot.skill_gems.append(gem)
+	for item in operation_loadout.support_gems:
+		var support: SupportGem = item
+		if not player.add_support_gem_to_inventory(support):
+			stash_loot.support_gems.append(support)
+	for item in operation_loadout.modules:
+		var mod: Module = item
+		if not player.add_module_to_inventory(mod):
+			stash_loot.modules.append(mod)
+	clear_operation_loadout()
+
+
+func deposit_run_backpack_loot_to_stash() -> Dictionary:
+	var moved := get_run_backpack_loot_counts()
+	stash_loot.equipment.append_array(run_backpack_loot.equipment)
+	stash_loot.skill_gems.append_array(run_backpack_loot.skill_gems)
+	stash_loot.support_gems.append_array(run_backpack_loot.support_gems)
+	stash_loot.modules.append_array(run_backpack_loot.modules)
+	clear_run_backpack_loot()
+	return moved
+
+
+func lose_run_backpack_loot() -> Dictionary:
+	var lost := get_run_backpack_loot_counts()
+	clear_run_backpack_loot()
+	return lost
+
+
+func get_last_run_extracted_summary() -> Dictionary:
+	return last_run_extracted_summary.duplicate(true)
+
+
+func get_last_run_failed_summary() -> Dictionary:
+	return last_run_failed_summary.duplicate(true)
+
+
+func sync_player_materials_from_stash(player: Player) -> void:
+	if player == null:
+		return
+	player.materials.clear()
+	for material_id in stash_materials.keys():
+		var id: String = str(material_id)
+		var count: int = int(stash_materials.get(id, 0))
+		if count > 0:
+			player.materials[id] = count
+
+
+func set_stash_material_count(id: String, count: int) -> void:
+	if id == "":
+		return
+	if count <= 0:
+		stash_materials.erase(id)
+		return
+	stash_materials[id] = count
+
+
+func get_stash_material_count(id: String) -> int:
+	if id == "":
+		return 0
+	return int(stash_materials.get(id, 0))
+
+
+func get_stash_materials_copy() -> Dictionary:
+	return stash_materials.duplicate(true)
+
+
+func get_stash_material_total() -> int:
+	var total: int = 0
+	for material_id in stash_materials.keys():
+		total += int(stash_materials.get(str(material_id), 0))
 	return total
 
 

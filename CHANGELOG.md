@@ -11,12 +11,38 @@ This format is based on Keep a Changelog and uses simple sections:
 ## [Unreleased]
 
 ### Added
+- New Lobby scene (`scenes/main/lobby.tscn`) as project entry.
+- Lobby stash loot browser with category switching:
+  - Equipment
+  - Skill Gems
+  - Support Gems
+  - Modules
+- Lobby operation loadout management:
+  - Move stash loot into loadout
+  - Move loadout loot back to stash
+  - Clear loadout
+- Run summary panel in HUD (manual confirm flow with `E`).
+- Operation loadout application to player at run start.
+- Run loot storage model:
+  - `run_backpack_loot`
+  - `stash_loot`
 
 ### Changed
+- Main scene switched from game directly to lobby (`project.godot`).
+- Core loop changed to operation-based extraction flow.
+- Materials changed to stash-only persistent resources (not run risk assets).
+- Extract and fail return flow now waits for player confirmation instead of instant transition.
+- Drop scaling unified around operation strength (`operation_level + danger`) across equipment/gems/modules.
 
 ### Fixed
+- Fixed multiple encoding/mojibake issues in gameplay and UI scripts.
+- Fixed lobby scene parse issues caused by BOM/encoding mismatch.
+- Fixed lobby `@onready` node path mismatches causing null instance access.
+- Removed obsolete floor +/- controls and related dead code paths.
 
 ### Balance
+- Danger progression integrated with floor clear / elite / boss events.
+- Module drop selection weighted by operation effective level.
 
 ## [1.1.0] - 2026-02-24
 
