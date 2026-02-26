@@ -24,3 +24,6 @@ obj/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Project docs should never be tracked
+/docs/
