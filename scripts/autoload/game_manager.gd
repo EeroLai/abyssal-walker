@@ -234,15 +234,15 @@ func cycle_loot_filter_mode() -> int:
 func get_loot_filter_name() -> String:
 	match loot_filter_mode:
 		LootFilterMode.ALL:
-			return "全部"
+			return "All"
 		LootFilterMode.MAGIC_PLUS:
-			return "魔法以上"
+			return "Magic+"
 		LootFilterMode.RARE_ONLY:
-			return "稀有以上"
+			return "Rare+"
 		LootFilterMode.GEMS_AND_MODULES:
-			return "寶石與模組"
+			return "Gems/Modules"
 		_:
-			return "全部"
+			return "All"
 
 
 func should_show_loot(item: Variant) -> bool:

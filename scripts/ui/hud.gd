@@ -21,9 +21,6 @@ var loot_filter_label: Label = null
 var risk_label: Label = null
 var extraction_prompt_panel: PanelContainer = null
 var extraction_prompt_label: Label = null
-var run_summary_panel: PanelContainer = null
-var run_summary_title_label: Label = null
-var run_summary_detail_label: Label = null
 var progression_mode_label: Label = null
 var progression_primary_label: Label = null
 var progression_secondary_label: Label = null
@@ -43,7 +40,6 @@ func _ready() -> void:
 	_create_loot_filter_label()
 	_create_risk_label()
 	_create_extraction_prompt_label()
-	_create_run_summary_panel()
 	_create_progression_labels()
 	_create_damage_vignette()
 	_refresh_loot_filter_label()
@@ -385,47 +381,6 @@ func _create_extraction_prompt_label() -> void:
 	extraction_prompt_panel.add_child(extraction_prompt_label)
 
 
-func _create_run_summary_panel() -> void:
-	run_summary_panel = PanelContainer.new()
-	run_summary_panel.name = "RunSummaryPanel"
-	run_summary_panel.anchor_left = 0.0
-	run_summary_panel.anchor_top = 1.0
-	run_summary_panel.anchor_right = 0.0
-	run_summary_panel.anchor_bottom = 1.0
-	run_summary_panel.offset_left = 16.0
-	run_summary_panel.offset_top = -112.0
-	run_summary_panel.offset_right = 300.0
-	run_summary_panel.offset_bottom = -16.0
-	run_summary_panel.visible = false
-	add_child(run_summary_panel)
-
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.08, 0.1, 0.14, 0.84)
-	style.border_color = Color(0.32, 0.42, 0.56, 0.9)
-	style.set_border_width_all(1)
-	style.set_corner_radius_all(6)
-	style.content_margin_left = 8
-	style.content_margin_right = 8
-	style.content_margin_top = 6
-	style.content_margin_bottom = 6
-	run_summary_panel.add_theme_stylebox_override("panel", style)
-
-	var vbox := VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 4)
-	run_summary_panel.add_child(vbox)
-
-	run_summary_title_label = Label.new()
-	run_summary_title_label.add_theme_font_size_override("font_size", 12)
-	run_summary_title_label.modulate = Color(0.97, 0.94, 0.72, 0.98)
-	vbox.add_child(run_summary_title_label)
-
-	run_summary_detail_label = Label.new()
-	run_summary_detail_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	run_summary_detail_label.add_theme_font_size_override("font_size", 11)
-	run_summary_detail_label.modulate = Color(0.9, 0.95, 1.0, 0.94)
-	vbox.add_child(run_summary_detail_label)
-
-
 func _create_progression_labels() -> void:
 	progression_panel = PanelContainer.new()
 	progression_panel.name = "ProgressionPanel"
@@ -517,29 +472,11 @@ func _on_run_extracted(summary: Dictionary) -> void:
 	var floor: int = int(summary.get("floor", 0))
 	var risk: int = int(summary.get("risk", 0))
 	_add_feed_entry("run_extracted", "已撤離：樓層 %d（風險 %d）" % [floor, risk], 1, Color(0.7, 1.0, 0.72))
-	return
-	var tier: int = int(summary.get("tier", 0))
-	var carried: int = int(summary.get("materials_carried", 0))
-	_show_run_summary(
-		"撤離結算",
-		"樓層：%d\n風險：%d（階段 %d）\n帶出材料總數：%d" % [floor, risk, tier, carried]
-	)
-	_add_feed_entry("run_extracted", "已撤離：樓層 %d（風險 %d）" % [floor, risk], 1, Color(0.7, 1.0, 0.72))
 
 
 func _on_run_failed(summary: Dictionary) -> void:
 	var lost: int = int(summary.get("lost", 0))
 	var kept: int = int(summary.get("kept", 0))
-	if lost > 0:
-		_add_feed_entry("run_failed", "挑戰失敗：損失 %d 材料，保留 %d" % [lost, kept], 1, Color(1.0, 0.56, 0.56))
-	return
-	var ratio: float = float(summary.get("keep_ratio", 0.0))
-	var tier: int = int(summary.get("tier", 0))
-	var risk: int = int(summary.get("risk", 0))
-	_show_run_summary(
-		"死亡結算",
-		"風險：%d（階段 %d）\n損失材料：%d\n保留材料：%d（保留 %.0f%%）" % [risk, tier, lost, kept, ratio * 100.0]
-	)
 	if lost <= 0:
 		return
 	_add_feed_entry("run_failed", "挑戰失敗：損失 %d 材料，保留 %d" % [lost, kept], 1, Color(1.0, 0.56, 0.56))
@@ -550,14 +487,6 @@ func set_extraction_prompt(visible: bool, text: String) -> void:
 		return
 	extraction_prompt_panel.visible = visible
 	extraction_prompt_label.text = text
-
-
-func _show_run_summary(title: String, detail: String) -> void:
-	if run_summary_panel == null:
-		return
-	run_summary_title_label.text = title
-	run_summary_detail_label.text = detail
-	run_summary_panel.visible = true
 
 
 func _refresh_loot_filter_label() -> void:

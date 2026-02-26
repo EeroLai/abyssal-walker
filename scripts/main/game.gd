@@ -305,31 +305,31 @@ func _configure_floor_objective(floor_number: int, config: Dictionary) -> void:
 func _objective_text() -> String:
 	match floor_objective_type:
 		FloorObjectiveType.BOSS_KILL:
-			return "目標：擊殺 Boss（%d/%d）" % [boss_kills_on_floor, required_boss_kills]
+			return "Objective: Defeat Boss (%d/%d)" % [boss_kills_on_floor, required_boss_kills]
 		FloorObjectiveType.CLEAR_AND_ELITE:
-			return "目標：清場並擊殺菁英（%d/%d）" % [elite_kills_on_floor, required_elite_kills]
+			return "Objective: Clear + Elite (%d/%d)" % [elite_kills_on_floor, required_elite_kills]
 		_:
-			return "目標：清除所有敵人"
+			return "Objective: Clear all enemies"
 
 
 func _progression_mode_text() -> String:
 	match progression_mode:
 		ProgressionMode.FARMING:
-			return "模式：農層"
+			return "Mode: Farming"
 		ProgressionMode.RETRYING:
-			return "模式：重試"
+			return "Mode: Retrying"
 		_:
-			return "模式：推進"
+			return "Mode: Pushing"
 
 
 func _update_progression_hud() -> void:
 	if hud == null:
 		return
 	var deaths_left: int = maxi(0, MAX_DEATHS_PER_FLOOR - floor_death_count)
-	var primary := "%s   剩餘命數：%d" % [_objective_text(), deaths_left]
-	var secondary := "農層目標：%d（- / =）" % preferred_farm_floor
+	var primary := "%s   Lives Left: %d" % [_objective_text(), deaths_left]
+	var secondary := "Target Floor: %d (- / +)" % preferred_farm_floor
 	if pending_failed_floor > 0:
-		secondary += "   待重試樓層：%d（N）" % pending_failed_floor
+		secondary += "   Failed Floor: %d (N)" % pending_failed_floor
 	if hud.has_method("set_progression_display"):
 		hud.set_progression_display(_progression_mode_text(), primary, secondary)
 	elif hud.has_method("set_progression_status"):
@@ -636,7 +636,7 @@ func try_pickup_item(item_data: Variant) -> bool:
 		var equipment: EquipmentData = item_data
 		if player.add_to_inventory(equipment):
 			var rarity_name: String = StatTypes.RARITY_NAMES.get(equipment.rarity, "Unknown")
-			print("撿到裝備：%s [%s]" % [equipment.display_name, rarity_name])
+			print("Picked equipment: %s [%s]" % [equipment.display_name, rarity_name])
 			EventBus.item_picked_up.emit(equipment)
 			return true
 		print("Inventory full: %s" % equipment.display_name)
@@ -645,7 +645,7 @@ func try_pickup_item(item_data: Variant) -> bool:
 	if item_data is SkillGem:
 		var gem: SkillGem = item_data
 		if player.add_skill_gem_to_inventory(gem):
-			print("撿到技能寶石：%s" % gem.display_name)
+			print("Picked skill gem: %s" % gem.display_name)
 			EventBus.item_picked_up.emit(gem)
 			return true
 		print("Skill Gem inventory full: %s" % gem.display_name)
@@ -654,7 +654,7 @@ func try_pickup_item(item_data: Variant) -> bool:
 	if item_data is SupportGem:
 		var support: SupportGem = item_data
 		if player.add_support_gem_to_inventory(support):
-			print("撿到輔助寶石：%s" % support.display_name)
+			print("Picked support gem: %s" % support.display_name)
 			EventBus.item_picked_up.emit(support)
 			return true
 		print("Support Gem inventory full: %s" % support.display_name)
@@ -663,7 +663,7 @@ func try_pickup_item(item_data: Variant) -> bool:
 	if item_data is Module:
 		var mod: Module = item_data
 		if player.add_module_to_inventory(mod):
-			print("撿到模組：%s（負載 %d）" % [mod.display_name, mod.load_cost])
+			print("Picked module: %s (load %d)" % [mod.display_name, mod.load_cost])
 			EventBus.item_picked_up.emit(mod)
 			return true
 		print("Module inventory full: %s" % mod.display_name)
@@ -676,12 +676,13 @@ func try_pickup_item(item_data: Variant) -> bool:
 			player.add_material(mat_id, amount)
 			var mat_data: Dictionary = DataManager.get_crafting_material(mat_id)
 			var name: String = mat_data.get("display_name", mat_id)
-			print("撿到材料：%s x%d" % [name, amount])
+			print("Picked material: %s x%d" % [name, amount])
 			EventBus.item_picked_up.emit({
 				"material_id": mat_id,
 				"amount": amount,
 			})
 			return true
+		return false
 
 	return false
 
@@ -808,7 +809,7 @@ func _run_extraction_window(floor_number: int) -> bool:
 		if hud != null and hud.has_method("set_extraction_prompt"):
 			hud.set_extraction_prompt(
 				true,
-				"撤離窗口（剩餘 %d 秒）\n[E] 立即撤離    [F] 直接繼續\n未選擇：時間到自動繼續" % remaining_sec
+				"Extraction window (%d sec left)\n[E] Extract now    [F] Continue\nNo choice: auto-continue" % remaining_sec
 			)
 		await get_tree().process_frame
 		elapsed += get_process_delta_time()
@@ -821,7 +822,7 @@ func _run_extraction_window(floor_number: int) -> bool:
 
 
 func _reset_after_extraction() -> void:
-	print("[撤離成功] 樓層=%d 風險=%d" % [current_floor, GameManager.risk_score])
+	print("[Extracted] floor=%d risk=%d" % [current_floor, GameManager.risk_score])
 	progression_mode = ProgressionMode.PUSHING
 	floor_death_count = 0
 	pending_failed_floor = 0
