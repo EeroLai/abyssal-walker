@@ -1,6 +1,6 @@
-# abyssal-walker
+﻿# abyssal-walker
 
-[English](README.md) | [繁體中文](README.zh-TW.md)
+[English](README.md) | [蝜?銝剜?](README.zh-TW.md)
 
 `abyssal-walker` is a Godot 4 action RPG prototype built around an operation-style risk/reward loop:
 
@@ -12,15 +12,15 @@
 ## Gameplay Preview
 
 <p align="center">
-  <img src="docs/images/gameplay-main.gif" alt="Main Gameplay" width="860" />
+  <img src="readme-assets/gameplay-main.gif" alt="Main Gameplay" width="860" />
 </p>
 
 ## Screenshots
 
 <p align="center">
-  <img src="docs/images/screenshot-combat.png" alt="Combat" width="31%" />
-  <img src="docs/images/screenshot-build-panel.png" alt="Build Panel" width="31%" />
-  <img src="docs/images/screenshot-crafting.png" alt="Crafting" width="31%" />
+  <img src="readme-assets/screenshot-combat.png" alt="Combat" width="31%" />
+  <img src="readme-assets/screenshot-build-panel.png" alt="Build Panel" width="31%" />
+  <img src="readme-assets/screenshot-crafting.png" alt="Crafting" width="31%" />
 </p>
 
 ## Current Gameplay Loop
@@ -70,3 +70,4 @@
 ## Changelog
 
 See `CHANGELOG.md`.
+
