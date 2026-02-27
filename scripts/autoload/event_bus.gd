@@ -1,6 +1,7 @@
 ﻿extends Node
 
 # Combat
+@warning_ignore("unused_signal")
 signal damage_dealt(source: Node, target: Node, damage_info: Dictionary)
 signal enemy_died(enemy: Node, position: Vector2)
 signal player_died
@@ -55,7 +56,6 @@ signal game_resumed
 # Session / Run
 signal kill_count_changed(count: int)
 signal dps_updated(dps: float)
-signal risk_score_changed(new_value: int, tier: int)
 signal operation_session_changed(summary: Dictionary)
 signal extraction_window_opened(floor_number: int, timeout_sec: float)
 signal extraction_window_closed(floor_number: int, extracted: bool)

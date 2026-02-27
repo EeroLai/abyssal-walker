@@ -2,28 +2,31 @@ extends Control
 
 const GAME_SCENE := "res://scenes/main/game.tscn"
 
-const LOOT_CATEGORIES := [
-	{"key": "equipment", "label": "裝備"},
-	{"key": "skill_gems", "label": "技能寶石"},
-	{"key": "support_gems", "label": "輔助寶石"},
-	{"key": "modules", "label": "模組"},
+const LOOT_CATEGORIES: Array[Dictionary] = [
+	{"key": "equipment", "label": "Equipment"},
+	{"key": "skill_gems", "label": "Skill Gems"},
+	{"key": "support_gems", "label": "Support Gems"},
+	{"key": "modules", "label": "Modules"},
 ]
 
-@onready var stash_total_label: Label = $RootPanel/Content/SummaryRow/SummaryLeft/StashTotalLabel
-@onready var stash_material_list: RichTextLabel = $RootPanel/Content/SummaryRow/SummaryLeft/StashMaterialList
-@onready var stash_loot_total_label: Label = $RootPanel/Content/SummaryRow/SummaryRight/StashLootTotalLabel
-@onready var loadout_total_label: Label = $RootPanel/Content/SummaryRow/SummaryRight/LoadoutTotalLabel
-@onready var operation_level_spin: SpinBox = $RootPanel/Content/ConfigRow/OperationLevelSpin
-@onready var lives_spin: SpinBox = $RootPanel/Content/ConfigRow/LivesSpin
-@onready var stash_category: OptionButton = $RootPanel/Content/LootRow/StashSide/StashCategory
-@onready var loadout_category: OptionButton = $RootPanel/Content/LootRow/LoadoutSide/LoadoutCategory
-@onready var stash_item_list: ItemList = $RootPanel/Content/LootRow/StashSide/StashList
-@onready var loadout_item_list: ItemList = $RootPanel/Content/LootRow/LoadoutSide/LoadoutList
-@onready var add_button: Button = $RootPanel/Content/LootRow/ActionSide/AddButton
-@onready var remove_button: Button = $RootPanel/Content/LootRow/ActionSide/RemoveButton
-@onready var clear_loadout_button: Button = $RootPanel/Content/LootRow/ActionSide/ClearLoadoutButton
+@onready var stash_total_label: Label = $PrepOverlay/PrepPanel/PrepContent/SummaryRow/SummaryLeft/SummaryLeftBody/StashTotalLabel
+@onready var stash_material_list: RichTextLabel = $PrepOverlay/PrepPanel/PrepContent/SummaryRow/SummaryLeft/SummaryLeftBody/StashMaterialList
+@onready var stash_loot_total_label: Label = $PrepOverlay/PrepPanel/PrepContent/SummaryRow/SummaryRight/SummaryRightBody/StashLootTotalLabel
+@onready var loadout_total_label: Label = $PrepOverlay/PrepPanel/PrepContent/SummaryRow/SummaryRight/SummaryRightBody/LoadoutTotalLabel
+@onready var operation_level_spin: SpinBox = $RootPanel/Content/ConfigRow/OperationCard/OperationCardBody/OperationLevelSpin
+@onready var lives_spin: SpinBox = $RootPanel/Content/ConfigRow/LivesCard/LivesCardBody/LivesSpin
+@onready var stash_category: OptionButton = $PrepOverlay/PrepPanel/PrepContent/LootRow/StashSide/StashBody/StashCategory
+@onready var loadout_category: OptionButton = $PrepOverlay/PrepPanel/PrepContent/LootRow/LoadoutSide/LoadoutBody/LoadoutCategory
+@onready var stash_item_list: ItemList = $PrepOverlay/PrepPanel/PrepContent/LootRow/StashSide/StashBody/StashList
+@onready var loadout_item_list: ItemList = $PrepOverlay/PrepPanel/PrepContent/LootRow/LoadoutSide/LoadoutBody/LoadoutList
+@onready var add_button: Button = $PrepOverlay/PrepPanel/PrepContent/LootRow/ActionSide/ActionBody/AddButton
+@onready var remove_button: Button = $PrepOverlay/PrepPanel/PrepContent/LootRow/ActionSide/ActionBody/RemoveButton
+@onready var clear_loadout_button: Button = $PrepOverlay/PrepPanel/PrepContent/LootRow/ActionSide/ActionBody/ClearLoadoutButton
 @onready var start_button: Button = $RootPanel/Content/ButtonsRow/StartButton
 @onready var quit_button: Button = $RootPanel/Content/ButtonsRow/QuitButton
+@onready var prep_toggle_button: Button = $RootPanel/Content/PrepToggleRow/PrepToggleButton
+@onready var prep_overlay: Control = $PrepOverlay
+@onready var prep_close_button: Button = $PrepOverlay/PrepPanel/PrepContent/PrepHeader/PrepCloseButton
 
 var _stash_entries: Array[Dictionary] = []
 var _loadout_entries: Array[Dictionary] = []
@@ -48,28 +51,50 @@ func _setup_controls() -> void:
 	lives_spin.rounded = true
 	lives_spin.value = GameManager.get_lives_max()
 
-	stash_category.clear()
-	loadout_category.clear()
-	for entry in LOOT_CATEGORIES:
-		stash_category.add_item(str(entry["label"]))
-		stash_category.set_item_metadata(stash_category.item_count - 1, str(entry["key"]))
-		loadout_category.add_item(str(entry["label"]))
-		loadout_category.set_item_metadata(loadout_category.item_count - 1, str(entry["key"]))
+	_setup_category_options(stash_category)
+	_setup_category_options(loadout_category)
 
-	stash_category.select(0)
-	loadout_category.select(0)
 	stash_item_list.select_mode = ItemList.SELECT_SINGLE
 	loadout_item_list.select_mode = ItemList.SELECT_SINGLE
+	prep_overlay.visible = false
+	prep_toggle_button.text = "Open Loadout Prep"
+
+
+func _setup_category_options(option: OptionButton) -> void:
+	option.clear()
+	for entry in LOOT_CATEGORIES:
+		option.add_item(str(entry["label"]))
+		option.set_item_metadata(option.item_count - 1, str(entry["key"]))
+	option.select(0)
 
 
 func _bind_actions() -> void:
-	stash_category.item_selected.connect(func(_index: int) -> void: _refresh_stash_list())
-	loadout_category.item_selected.connect(func(_index: int) -> void: _refresh_loadout_list())
+	stash_category.item_selected.connect(_on_stash_category_selected)
+	loadout_category.item_selected.connect(_on_loadout_category_selected)
 	add_button.pressed.connect(_on_add_pressed)
 	remove_button.pressed.connect(_on_remove_pressed)
 	clear_loadout_button.pressed.connect(_on_clear_loadout_pressed)
 	start_button.pressed.connect(_on_start_pressed)
 	quit_button.pressed.connect(_on_quit_pressed)
+	prep_toggle_button.pressed.connect(_on_prep_toggle_pressed)
+	prep_close_button.pressed.connect(_on_prep_close_pressed)
+
+
+func _on_prep_toggle_pressed() -> void:
+	prep_overlay.visible = true
+	_refresh_all()
+
+
+func _on_prep_close_pressed() -> void:
+	prep_overlay.visible = false
+
+
+func _on_stash_category_selected(_index: int) -> void:
+	_refresh_stash_list()
+
+
+func _on_loadout_category_selected(_index: int) -> void:
+	_refresh_loadout_list()
 
 
 func _refresh_all() -> void:
@@ -79,7 +104,7 @@ func _refresh_all() -> void:
 
 
 func _refresh_summary() -> void:
-	stash_total_label.text = "倉庫材料總量: %d" % GameManager.get_stash_material_total()
+	stash_total_label.text = "Crafting Materials: %d" % GameManager.get_stash_material_total()
 
 	var lines: Array[String] = []
 	for material_id in DataManager.get_all_material_ids():
@@ -89,19 +114,21 @@ func _refresh_summary() -> void:
 		var mat_data: Dictionary = DataManager.get_crafting_material(material_id)
 		lines.append("- %s x%d" % [str(mat_data.get("display_name", material_id)), amount])
 	if lines.is_empty():
-		lines.append("- 無")
+		lines.append("- Empty")
 	stash_material_list.text = "\n".join(lines)
 
 	var stash_counts: Dictionary = GameManager.get_stash_loot_counts()
 	var loadout_counts: Dictionary = GameManager.get_operation_loadout_counts()
-	stash_loot_total_label.text = "倉庫戰利品: 裝備 %d / 寶石 %d / 模組 %d" % [
+	stash_loot_total_label.text = "Stash Loot: Eq %d | Skill %d | Support %d | Module %d" % [
 		int(stash_counts.get("equipment", 0)),
-		int(stash_counts.get("total_gems", 0)),
+		int(stash_counts.get("skill_gems", 0)),
+		int(stash_counts.get("support_gems", 0)),
 		int(stash_counts.get("modules", 0)),
 	]
-	loadout_total_label.text = "出戰配置: 裝備 %d / 寶石 %d / 模組 %d" % [
+	loadout_total_label.text = "Loadout: Eq %d | Skill %d | Support %d | Module %d" % [
 		int(loadout_counts.get("equipment", 0)),
-		int(loadout_counts.get("total_gems", 0)),
+		int(loadout_counts.get("skill_gems", 0)),
+		int(loadout_counts.get("support_gems", 0)),
 		int(loadout_counts.get("modules", 0)),
 	]
 
@@ -114,7 +141,8 @@ func _refresh_stash_list() -> void:
 	var items: Array = snapshot.get(category, [])
 	for i in range(items.size()):
 		_stash_entries.append({"category": category, "index": i})
-		stash_item_list.add_item(_loot_label(items[i]))
+		var item: Variant = items[i]
+		stash_item_list.add_item(_loot_label(item))
 
 
 func _refresh_loadout_list() -> void:
@@ -125,7 +153,8 @@ func _refresh_loadout_list() -> void:
 	var items: Array = snapshot.get(category, [])
 	for i in range(items.size()):
 		_loadout_entries.append({"category": category, "index": i})
-		loadout_item_list.add_item(_loot_label(items[i]))
+		var item: Variant = items[i]
+		loadout_item_list.add_item(_loot_label(item))
 
 
 func _selected_category_key(option: OptionButton) -> String:
@@ -144,14 +173,14 @@ func _loot_label(item: Variant) -> String:
 		return "%s [%s]" % [eq.display_name, rarity_name]
 	if item is SkillGem:
 		var sg: SkillGem = item
-		return "技能寶石: %s Lv%d" % [sg.display_name, sg.level]
+		return "Skill Gem: %s Lv%d" % [sg.display_name, sg.level]
 	if item is SupportGem:
 		var sp: SupportGem = item
-		return "輔助寶石: %s Lv%d" % [sp.display_name, sp.level]
+		return "Support Gem: %s Lv%d" % [sp.display_name, sp.level]
 	if item is Module:
 		var mod: Module = item
-		return "模組: %s" % mod.display_name
-	return "未知物品"
+		return "Module: %s" % mod.display_name
+	return "Unknown Item"
 
 
 func _on_add_pressed() -> void:
@@ -191,7 +220,6 @@ func _on_clear_loadout_pressed() -> void:
 func _on_start_pressed() -> void:
 	var operation_level := int(operation_level_spin.value)
 	var lives := int(lives_spin.value)
-	GameManager.reset_risk()
 	GameManager.start_operation(operation_level, GameManager.OperationType.NORMAL, lives)
 	get_tree().change_scene_to_file(GAME_SCENE)
 

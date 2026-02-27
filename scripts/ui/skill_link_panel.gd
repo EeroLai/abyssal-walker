@@ -584,6 +584,6 @@ func hide_tooltip() -> void:
 		item_tooltip.visible = false
 
 
-func _format_gem_button_text(name: String, level: int) -> String:
-	var short_name := name.substr(0, 4) if name.length() > 4 else name
+func _format_gem_button_text(gem_name: String, level: int) -> String:
+	var short_name := gem_name.substr(0, 4) if gem_name.length() > 4 else gem_name
 	return "%s\nLv%d" % [short_name, level]

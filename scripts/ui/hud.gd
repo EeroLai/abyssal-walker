@@ -20,7 +20,6 @@ var _pickup_entries: Array[Dictionary] = []
 var _pickup_labels: Array[Label] = []
 var loot_filter_label: Label = null
 var operation_label: Label = null
-var risk_label: Label = null
 var extraction_prompt_panel: PanelContainer = null
 var extraction_prompt_label: Label = null
 var run_summary_panel: PanelContainer = null
@@ -44,13 +43,11 @@ func _ready() -> void:
 	_create_pickup_feed()
 	_create_loot_filter_label()
 	_create_operation_label()
-	_create_risk_label()
 	_create_extraction_prompt_label()
 	_create_run_summary_panel()
 	_create_progression_labels()
 	_create_damage_vignette()
 	_refresh_loot_filter_label()
-	_on_risk_score_changed(GameManager.risk_score, GameManager.get_risk_tier())
 	_on_operation_session_changed(GameManager.get_operation_summary())
 	_connect_signals()
 
@@ -69,7 +66,6 @@ func _connect_signals() -> void:
 	EventBus.status_applied.connect(_on_status_applied)
 	EventBus.status_removed.connect(_on_status_removed)
 	EventBus.loot_filter_changed.connect(_on_loot_filter_changed)
-	EventBus.risk_score_changed.connect(_on_risk_score_changed)
 	EventBus.operation_session_changed.connect(_on_operation_session_changed)
 	EventBus.extraction_window_opened.connect(_on_extraction_window_opened)
 	EventBus.extraction_window_closed.connect(_on_extraction_window_closed)
@@ -141,10 +137,10 @@ func set_progression_display(mode_text: String, primary_text: String, secondary_
 		progression_secondary_label.text = secondary_text
 
 
-func set_floor_choice_visible(visible: bool) -> void:
+func set_floor_choice_visible(is_visible: bool) -> void:
 	if progression_panel == null:
 		return
-	progression_panel.visible = visible
+	progression_panel.visible = is_visible
 
 
 func update_enemy_count(count: int) -> void:
@@ -359,23 +355,6 @@ func _create_operation_label() -> void:
 	add_child(operation_label)
 
 
-func _create_risk_label() -> void:
-	risk_label = Label.new()
-	risk_label.name = "RiskLabel"
-	risk_label.anchor_left = 1.0
-	risk_label.anchor_top = 0.0
-	risk_label.anchor_right = 1.0
-	risk_label.anchor_bottom = 0.0
-	risk_label.offset_left = -330.0
-	risk_label.offset_top = 80.0
-	risk_label.offset_right = -20.0
-	risk_label.offset_bottom = 102.0
-	risk_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	risk_label.add_theme_font_size_override("font_size", 13)
-	risk_label.modulate = Color(1.0, 0.88, 0.58, 0.95)
-	add_child(risk_label)
-
-
 func _create_extraction_prompt_label() -> void:
 	extraction_prompt_panel = PanelContainer.new()
 	extraction_prompt_panel.name = "ExtractionPromptPanel"
@@ -535,12 +514,6 @@ func _on_loot_filter_changed(_mode: int) -> void:
 	_refresh_loot_filter_label()
 
 
-func _on_risk_score_changed(new_value: int, tier: int) -> void:
-	if risk_label == null:
-		return
-	risk_label.text = "Risk: %d (Tier %d)" % [new_value, tier]
-
-
 func _on_operation_session_changed(summary: Dictionary) -> void:
 	if operation_label == null:
 		return
@@ -561,7 +534,6 @@ func _on_extraction_window_closed(_floor_number: int, _extracted: bool) -> void:
 
 func _on_run_extracted(summary: Dictionary) -> void:
 	var floor: int = int(summary.get("floor", 0))
-	var risk: int = int(summary.get("risk", 0))
 	var stash_total: int = int(summary.get("stash_total", 0))
 	var moved: Dictionary = summary.get("loot_moved", {})
 	var moved_equipment: int = int(moved.get("equipment", 0))
@@ -569,9 +541,8 @@ func _on_run_extracted(summary: Dictionary) -> void:
 	var moved_modules: int = int(moved.get("modules", 0))
 	_add_feed_entry(
 		"run_extracted",
-		"成功撤離：深淵 %d 層，Risk %d，入庫 裝%d/寶石%d/模組%d，材料倉庫 %d" % [
+		"成功撤離：深淵 %d 層，入庫 裝%d/寶石%d/模組%d，材料倉庫 %d" % [
 			floor,
-			risk,
 			moved_equipment,
 			moved_gems,
 			moved_modules,
@@ -602,10 +573,10 @@ func _on_run_failed(summary: Dictionary) -> void:
 	)
 
 
-func set_extraction_prompt(visible: bool, text: String) -> void:
+func set_extraction_prompt(is_visible: bool, text: String) -> void:
 	if extraction_prompt_label == null or extraction_prompt_panel == null:
 		return
-	extraction_prompt_panel.visible = visible
+	extraction_prompt_panel.visible = is_visible
 	extraction_prompt_label.text = text
 
 

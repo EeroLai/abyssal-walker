@@ -314,12 +314,15 @@ func unequip_skill_to_inventory() -> bool:
 
 
 func equip_support_from_inventory(index: int) -> bool:
-	var gem := remove_support_gem_from_inventory(index)
+	if index < 0 or index >= MAX_SUPPORT_GEM_INVENTORY:
+		return false
+	var gem := get_support_gem_in_inventory(index)
 	if gem == null:
 		return false
 	if not gem_link.add_support_gem(gem):
-		_set_support_gem_in_inventory(index, gem)
 		return false
+	_set_support_gem_in_inventory(index, null)
+	_compact_support_gem_inventory()
 	return true
 
 

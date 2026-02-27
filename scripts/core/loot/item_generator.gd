@@ -2,7 +2,6 @@ class_name ItemGenerator
 extends RefCounted
 
 static var _ilvl100_no_special_streak: int = 0
-const RISK_HIGH_TIER_THRESHOLD: int = 80
 
 ## 裝備生成器
 
@@ -10,9 +9,7 @@ const RISK_HIGH_TIER_THRESHOLD: int = 80
 static func generate_equipment(
 	base_id: String,
 	rarity: StatTypes.Rarity,
-	floor_level: int = 1,
-	risk_tier_bonus: int = 0,
-	risk_score_bonus: int = 0
+	floor_level: int = 1
 ) -> EquipmentData:
 	var base_data: Dictionary = DataManager.get_equipment_base(base_id)
 	if base_data.is_empty():
@@ -40,8 +37,8 @@ static func generate_equipment(
 
 	# 生成詞綴
 	var item_level: int = _floor_to_item_level(floor_level)
-	var affix_count := _get_affix_count(rarity, item_level, risk_score_bonus)
-	_generate_affixes(equipment, affix_count, item_level, risk_tier_bonus)
+	var affix_count := _get_affix_count(rarity, item_level)
+	_generate_affixes(equipment, affix_count, item_level)
 
 	return equipment
 
@@ -52,18 +49,14 @@ static func generate_random_equipment(
 	floor_level: int = 1
 ) -> EquipmentData:
 	# 決定稀有度
-	var risk_score_bonus: int = _get_drop_risk_score()
-	var rarity := _roll_rarity(floor_level, risk_score_bonus)
+	var rarity := _roll_rarity(floor_level)
 
 	# 找該欄位的基底
 	var base_id := _pick_random_base_for_slot(slot)
 	if base_id.is_empty():
 		return null
 
-	var risk_tier_bonus: int = _get_drop_risk_tier_bonus()
-	var equipment := generate_equipment(
-		base_id, rarity, floor_level, risk_tier_bonus, risk_score_bonus
-	)
+	var equipment := generate_equipment(base_id, rarity, floor_level)
 	if equipment == null:
 		return null
 	_apply_ilvl100_pity_if_needed(equipment)
@@ -94,8 +87,7 @@ static func _generate_base_stats(base_data: Dictionary) -> Array[StatModifier]:
 static func _generate_affixes(
 	equipment: EquipmentData,
 	total_count: int,
-	item_level: int,
-	risk_tier_bonus: int = 0
+	item_level: int
 ) -> void:
 	var counts: Vector2i = _get_prefix_suffix_counts(equipment.rarity, total_count)
 	var prefix_count: int = counts.x
@@ -109,7 +101,7 @@ static func _generate_affixes(
 		available_prefixes = _filter_affix_pool(available_prefixes, blocked_groups)
 		if available_prefixes.is_empty():
 			break
-		var affix: Affix = _pick_and_generate_affix(available_prefixes, item_level, risk_tier_bonus)
+		var affix: Affix = _pick_and_generate_affix(available_prefixes, item_level)
 		if affix:
 			equipment.prefixes.append(affix)
 			if affix.group != "":
@@ -125,7 +117,7 @@ static func _generate_affixes(
 		available_suffixes = _filter_affix_pool(available_suffixes, blocked_groups)
 		if available_suffixes.is_empty():
 			break
-		var affix: Affix = _pick_and_generate_affix(available_suffixes, item_level, risk_tier_bonus)
+		var affix: Affix = _pick_and_generate_affix(available_suffixes, item_level)
 		if affix:
 			equipment.suffixes.append(affix)
 			if affix.group != "":
@@ -172,8 +164,7 @@ static func _get_prefix_suffix_counts(rarity: StatTypes.Rarity, total_count: int
 
 static func _pick_and_generate_affix(
 	available: Array,
-	item_level: int,
-	risk_tier_bonus: int = 0
+	item_level: int
 ) -> Affix:
 	if available.is_empty():
 		return null
@@ -207,7 +198,7 @@ static func _pick_and_generate_affix(
 			available_tier_indices.append(idx)
 	if available_tier_indices.is_empty():
 		return null
-	var tier_index: int = _pick_weighted_tier_index(tiers, available_tier_indices, risk_tier_bonus)
+	var tier_index: int = _pick_weighted_tier_index(tiers, available_tier_indices)
 	var tier_data: Dictionary = tiers[tier_index]
 
 	affix.tier = tier_data.get("tier", 1)
@@ -258,8 +249,7 @@ static func _pick_weighted_affix_data(available: Array) -> Dictionary:
 
 static func _pick_weighted_tier_index(
 	tiers: Array,
-	available_indices: Array[int],
-	risk_tier_bonus: int = 0
+	available_indices: Array[int]
 ) -> int:
 	if available_indices.is_empty():
 		return 0
@@ -272,8 +262,7 @@ static func _pick_weighted_tier_index(
 		var tier_data: Dictionary = tiers[idx]
 		var tier_num: int = int(tier_data.get("tier", idx + 1))
 		var base_weight: float = maxf(float(tier_num), 1.0)
-		var quality_weight: float = pow(base_weight, 1.0 + maxf(float(risk_tier_bonus), 0.0) * 0.18)
-		var weight: float = maxf(quality_weight, 0.001)
+		var weight: float = maxf(base_weight, 0.001)
 		weights.append(weight)
 		total_weight += weight
 
@@ -305,26 +294,6 @@ static func _roll_weighted_yellow_affix_count() -> int:
 	elif roll < 0.50:
 		return 4
 	elif roll < 0.80:
-		return 5
-	return 6
-
-
-static func _roll_weighted_yellow_affix_count_with_risk(risk_score_bonus: int) -> int:
-	var intensity := clampf(
-		float(risk_score_bonus - RISK_HIGH_TIER_THRESHOLD) / 20.0,
-		0.0,
-		1.0
-	)
-	var w3 := lerpf(0.20, 0.05, intensity)
-	var w4 := lerpf(0.30, 0.15, intensity)
-	var w5 := lerpf(0.30, 0.40, intensity)
-	var w6 := lerpf(0.20, 0.40, intensity)
-	var roll := randf()
-	if roll < w3:
-		return 3
-	elif roll < w3 + w4:
-		return 4
-	elif roll < w3 + w4 + w5:
 		return 5
 	return 6
 
@@ -447,8 +416,7 @@ static func _build_ilvl100_pool_for_type(
 
 
 static func _roll_rarity(
-	floor_level: int,
-	risk_score_bonus: int = 0
+	floor_level: int
 ) -> StatTypes.Rarity:
 	var item_level: int = _floor_to_item_level(floor_level)
 	var white_chance := 0.60
@@ -472,15 +440,6 @@ static func _roll_rarity(
 		magic_chance = 0.45
 		rare_chance = 0.10
 
-	if risk_score_bonus >= RISK_HIGH_TIER_THRESHOLD:
-		var risk_over: int = maxi(risk_score_bonus - RISK_HIGH_TIER_THRESHOLD, 0)
-		var rare_boost := 0.10 + minf(float(risk_over) * 0.005, 0.10)
-		var white_reduce := minf(white_chance * 0.75, rare_boost * 0.45)
-		var magic_reduce := rare_boost - white_reduce
-		white_chance = maxf(0.0, white_chance - white_reduce)
-		magic_chance = maxf(0.0, magic_chance - magic_reduce)
-		rare_chance = minf(0.95, rare_chance + rare_boost)
-
 	var total_chance := white_chance + magic_chance + rare_chance
 	if total_chance > 0.0:
 		white_chance /= total_chance
@@ -498,8 +457,7 @@ static func _roll_rarity(
 
 static func _get_affix_count(
 	rarity: StatTypes.Rarity,
-	_item_level: int = 1,
-	risk_score_bonus: int = 0
+	_item_level: int = 1
 ) -> int:
 	match rarity:
 		StatTypes.Rarity.WHITE:
@@ -507,8 +465,6 @@ static func _get_affix_count(
 		StatTypes.Rarity.BLUE:
 			return randi_range(1, 2)
 		StatTypes.Rarity.YELLOW:
-			if risk_score_bonus >= RISK_HIGH_TIER_THRESHOLD:
-				return _roll_weighted_yellow_affix_count_with_risk(risk_score_bonus)
 			return _roll_weighted_yellow_affix_count()
 		StatTypes.Rarity.ORANGE:
 			return randi_range(4, 6)
@@ -597,18 +553,6 @@ static func _add_affix_of_type(
 
 static func _floor_to_item_level(floor_level: int) -> int:
 	return clampi(floor_level, 1, 100)
-
-
-static func _get_drop_risk_tier_bonus() -> int:
-	if GameManager != null and GameManager.has_method("get_risk_tier"):
-		return int(GameManager.get_risk_tier())
-	return 0
-
-
-static func _get_drop_risk_score() -> int:
-	if GameManager != null:
-		return int(GameManager.risk_score)
-	return 0
 
 
 static func _get_tier_min_ilvl(tier_data: Dictionary, idx: int) -> int:

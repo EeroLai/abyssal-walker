@@ -10,6 +10,14 @@ This format is based on Keep a Changelog and uses simple sections:
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-02-27
+
+### Fixed
+- Fixed module load cost becoming `0` after extract -> lobby -> re-enter flow when operating module equip/unequip.
+- Fixed support gem disappearing when equip attempt fails due to incompatibility and then unequipping from support slot.
+
+## [2.0.0] - 2026-02-27
+
 ### Added
 - New Lobby scene (`scenes/main/lobby.tscn`) as project entry.
 - Lobby stash loot browser with category switching:

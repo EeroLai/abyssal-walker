@@ -8,13 +8,13 @@ enum ModuleType {
 	SPECIAL,
 }
 
-var id: String = ""
-var display_name: String = ""
-var description: String = ""
-var module_type: ModuleType = ModuleType.ATTACK
-var load_cost: int = 0
-var is_starter: bool = false
-var modifiers: Array[StatModifier] = []
+@export var id: String = ""
+@export var display_name: String = ""
+@export var description: String = ""
+@export var module_type: ModuleType = ModuleType.ATTACK
+@export var load_cost: int = 0
+@export var is_starter: bool = false
+@export var modifiers: Array[StatModifier] = []
 
 
 func apply_to_stats(stats: StatContainer) -> void:
@@ -43,3 +43,18 @@ func get_type_color() -> Color:
 		ModuleType.UTILITY: return Color(0.4, 1.0, 0.5)
 		ModuleType.SPECIAL: return Color(0.9, 0.5, 1.0)
 	return Color.WHITE
+
+
+func duplicate_module() -> Module:
+	var copy := Module.new()
+	copy.id = id
+	copy.display_name = display_name
+	copy.description = description
+	copy.module_type = module_type
+	copy.load_cost = load_cost
+	copy.is_starter = is_starter
+	for mod in modifiers:
+		if mod == null:
+			continue
+		copy.modifiers.append(mod.duplicate_modifier())
+	return copy

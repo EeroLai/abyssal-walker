@@ -19,10 +19,6 @@ enum OperationType {
 }
 
 const DPS_WINDOW_DURATION := 5.0
-const RISK_PER_FLOOR_CLEAR: int = 10
-const RISK_PER_ELITE_KILL: int = 8
-const RISK_PER_BOSS_KILL: int = 20
-const RISK_TIER_STEP: int = 25
 const DEFAULT_OPERATION_LIVES: int = 3
 const STARTER_STASH_MATERIALS: Dictionary = {
 	"alter": 40,
@@ -34,7 +30,6 @@ var current_state: GameState = GameState.MENU
 var current_floor: int = 1
 var is_in_abyss: bool = false
 var loot_filter_mode: LootFilterMode = LootFilterMode.ALL
-var risk_score: int = 0
 var extraction_interval: int = 3
 var extraction_window_open: bool = false
 var stash_materials: Dictionary = {}
@@ -56,6 +51,7 @@ var operation_loadout: Dictionary = {
 	"support_gems": [],
 	"modules": [],
 }
+var persistent_player_build: Dictionary = {}
 var last_run_extracted_summary: Dictionary = {}
 var last_run_failed_summary: Dictionary = {}
 var operation_session: Dictionary = {
@@ -83,6 +79,19 @@ var idle_stats: Dictionary = {
 }
 
 var _damage_window: Array[Dictionary] = []
+
+const EQUIPMENT_SLOT_ORDER: Array[int] = [
+	StatTypes.EquipmentSlot.MAIN_HAND,
+	StatTypes.EquipmentSlot.OFF_HAND,
+	StatTypes.EquipmentSlot.HELMET,
+	StatTypes.EquipmentSlot.ARMOR,
+	StatTypes.EquipmentSlot.GLOVES,
+	StatTypes.EquipmentSlot.BOOTS,
+	StatTypes.EquipmentSlot.BELT,
+	StatTypes.EquipmentSlot.AMULET,
+	StatTypes.EquipmentSlot.RING_1,
+	StatTypes.EquipmentSlot.RING_2,
+]
 
 
 func _ready() -> void:
@@ -115,7 +124,7 @@ func start_game() -> void:
 	current_state = GameState.PLAYING
 	is_in_abyss = true
 	_reset_session_stats()
-	reset_risk()
+	extraction_window_open = false
 	if get_lives_left() <= 0:
 		reset_operation()
 
@@ -157,12 +166,6 @@ func complete_floor() -> void:
 func fail_floor() -> void:
 	EventBus.floor_failed.emit(current_floor)
 	session_stats.deaths += 1
-
-
-func reset_risk() -> void:
-	risk_score = 0
-	extraction_window_open = false
-	EventBus.risk_score_changed.emit(risk_score, get_risk_tier())
 
 
 func start_operation(
@@ -247,33 +250,6 @@ func _ensure_starter_stash() -> void:
 			stash_materials[id] = amount
 
 
-func add_risk(amount: int) -> void:
-	if amount <= 0:
-		return
-	risk_score += amount
-	EventBus.risk_score_changed.emit(risk_score, get_risk_tier())
-
-
-func add_floor_clear_risk() -> void:
-	add_risk(RISK_PER_FLOOR_CLEAR)
-
-
-func add_elite_kill_risk() -> void:
-	add_risk(RISK_PER_ELITE_KILL)
-	add_danger(1)
-
-
-func add_boss_kill_risk() -> void:
-	add_risk(RISK_PER_BOSS_KILL)
-	add_danger(2)
-
-
-func get_risk_tier() -> int:
-	if risk_score <= 0:
-		return 0
-	return int(floor(float(risk_score) / float(RISK_TIER_STEP)))
-
-
 func should_open_extraction_window(floor_number: int) -> bool:
 	if floor_number <= 0:
 		return false
@@ -292,8 +268,6 @@ func close_extraction_window(floor_number: int, extracted: bool, player: Player 
 		var moved_loot := deposit_run_backpack_loot_to_stash()
 		last_run_extracted_summary = {
 			"floor": floor_number,
-			"risk": risk_score,
-			"tier": get_risk_tier(),
 			"materials_carried": 0,
 			"stash_total": get_stash_material_total(),
 			"loot_moved": moved_loot,
@@ -310,8 +284,6 @@ func apply_death_material_penalty(player: Player) -> Dictionary:
 	var summary := {
 		"kept": kept_total,
 		"lost": 0,
-		"tier": get_risk_tier(),
-		"risk": risk_score,
 		"stash_total": get_stash_material_total(),
 		"loot_lost": lost_loot,
 	}
@@ -347,6 +319,32 @@ func clear_operation_loadout() -> void:
 	}
 
 
+func has_persistent_player_build() -> bool:
+	return not persistent_player_build.is_empty()
+
+
+func save_persistent_player_build_from_player(player: Player) -> void:
+	if player == null:
+		return
+	if player.core_board == null or player.gem_link == null or player.stats == null:
+		return
+	persistent_player_build = _capture_player_build(player)
+
+
+func apply_persistent_player_build_to_player(player: Player) -> void:
+	if player == null:
+		return
+	if player.core_board == null or player.gem_link == null or player.stats == null:
+		return
+	if persistent_player_build.is_empty():
+		return
+	_apply_player_build_snapshot(player, persistent_player_build)
+
+
+func get_persistent_player_build_snapshot() -> Dictionary:
+	return persistent_player_build.duplicate(true)
+
+
 func add_loot_to_run_backpack(item: Variant) -> void:
 	if item is EquipmentData:
 		run_backpack_loot.equipment.append((item as EquipmentData).duplicate(true))
@@ -355,7 +353,7 @@ func add_loot_to_run_backpack(item: Variant) -> void:
 	elif item is SupportGem:
 		run_backpack_loot.support_gems.append((item as SupportGem).duplicate(true))
 	elif item is Module:
-		run_backpack_loot.modules.append((item as Module).duplicate(true))
+		run_backpack_loot.modules.append((item as Module).duplicate_module())
 
 
 func get_run_backpack_loot_counts() -> Dictionary:
@@ -454,6 +452,118 @@ func apply_operation_loadout_to_player(player: Player) -> void:
 	clear_operation_loadout()
 
 
+func _capture_player_build(player: Player) -> Dictionary:
+	var equipped_map: Dictionary = {}
+	for slot_key: Variant in player.equipment.keys():
+		var slot_id: int = int(slot_key)
+		var equipped_item: EquipmentData = player.equipment.get(slot_key) as EquipmentData
+		if equipped_item != null:
+			equipped_map[slot_id] = equipped_item.duplicate(true)
+
+	var equipped_skill_gem: SkillGem = null
+	if player.gem_link != null and player.gem_link.skill_gem != null:
+		equipped_skill_gem = player.gem_link.skill_gem.duplicate(true)
+
+	var equipped_supports: Array = []
+	if player.gem_link != null:
+		equipped_supports = _clone_resource_array(player.gem_link.support_gems)
+
+	return {
+		"equipment": equipped_map,
+		"inventory": _clone_resource_array(player.inventory),
+		"skill_gem_inventory": _clone_resource_array(player.skill_gem_inventory),
+		"support_gem_inventory": _clone_resource_array(player.support_gem_inventory),
+		"equipped_skill_gem": equipped_skill_gem,
+		"equipped_support_gems": equipped_supports,
+		"module_inventory": _clone_resource_array(player.module_inventory),
+		"equipped_modules": _clone_resource_array(player.core_board.slots),
+	}
+
+
+func _apply_player_build_snapshot(player: Player, snapshot: Dictionary) -> void:
+	_clear_player_build(player)
+
+	var equipped_map: Dictionary = snapshot.get("equipment", {})
+	for slot_id in EQUIPMENT_SLOT_ORDER:
+		var item_data: Variant = equipped_map.get(slot_id, null)
+		if item_data is EquipmentData:
+			var equipped_item: EquipmentData = (item_data as EquipmentData).duplicate(true)
+			equipped_item.slot = slot_id
+			player.equip(equipped_item)
+
+	var inventory_items: Array = snapshot.get("inventory", [])
+	for item_data: Variant in inventory_items:
+		if item_data is EquipmentData:
+			player.add_to_inventory((item_data as EquipmentData).duplicate(true))
+
+	var skill_inventory: Array = snapshot.get("skill_gem_inventory", [])
+	for i in range(mini(skill_inventory.size(), Constants.MAX_SKILL_GEM_INVENTORY)):
+		var skill_item: Variant = skill_inventory[i]
+		if skill_item is SkillGem:
+			player.set_skill_gem_in_inventory(i, (skill_item as SkillGem).duplicate(true))
+
+	var support_inventory: Array = snapshot.get("support_gem_inventory", [])
+	for i in range(mini(support_inventory.size(), Constants.MAX_SUPPORT_GEM_INVENTORY)):
+		var support_item: Variant = support_inventory[i]
+		if support_item is SupportGem:
+			player.set_support_gem_in_inventory(i, (support_item as SupportGem).duplicate(true))
+
+	var equipped_skill: Variant = snapshot.get("equipped_skill_gem", null)
+	if equipped_skill is SkillGem and player.gem_link != null:
+		player.gem_link.set_skill_gem((equipped_skill as SkillGem).duplicate(true))
+
+	var equipped_supports: Array = snapshot.get("equipped_support_gems", [])
+	if player.gem_link != null:
+		for i in range(mini(equipped_supports.size(), Constants.MAX_SUPPORT_GEMS)):
+			var support_data: Variant = equipped_supports[i]
+			if support_data is SupportGem:
+				player.gem_link.set_support_gem(i, (support_data as SupportGem).duplicate(true))
+
+	var equipped_modules: Array = snapshot.get("equipped_modules", [])
+	for module_data: Variant in equipped_modules:
+		if module_data is Module:
+			var mod: Module = (module_data as Module).duplicate_module()
+			if not player.core_board.equip(mod, player.stats):
+				player.add_module_to_inventory(mod)
+
+	var module_inventory: Array = snapshot.get("module_inventory", [])
+	for module_data: Variant in module_inventory:
+		if module_data is Module:
+			player.add_module_to_inventory((module_data as Module).duplicate_module())
+
+	player.current_hp = player.stats.get_stat(StatTypes.Stat.HP)
+	player.call("_emit_health_changed")
+
+
+func _clear_player_build(player: Player) -> void:
+	for slot_id in EQUIPMENT_SLOT_ORDER:
+		player.unequip(slot_id)
+	player.inventory.clear()
+	player.skill_gem_inventory.clear()
+	player.support_gem_inventory.clear()
+	if player.gem_link != null:
+		player.gem_link.set_skill_gem(null)
+		player.gem_link.support_gems.clear()
+	if player.core_board != null:
+		while player.core_board.slots.size() > 0:
+			player.core_board.unequip_at(0, player.stats)
+	player.module_inventory.clear()
+
+
+func _clone_resource_array(source: Array) -> Array:
+	var cloned: Array = []
+	for value: Variant in source:
+		if value == null:
+			cloned.append(null)
+		elif value is Module:
+			cloned.append((value as Module).duplicate_module())
+		elif value is Resource:
+			cloned.append((value as Resource).duplicate(true))
+		else:
+			cloned.append(value)
+	return cloned
+
+
 func deposit_run_backpack_loot_to_stash() -> Dictionary:
 	var moved := get_run_backpack_loot_counts()
 	stash_loot.equipment.append_array(run_backpack_loot.equipment)
@@ -517,6 +627,7 @@ func get_stash_material_total() -> int:
 
 func resume_playing() -> void:
 	current_state = GameState.PLAYING
+	get_tree().paused = false
 
 
 func get_current_dps() -> float:

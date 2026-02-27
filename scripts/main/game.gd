@@ -63,6 +63,7 @@ var _run_fail_return_confirmed: bool = false
 const GEM_DROP_CHANCE := 0.01
 const MATERIAL_DROP_CHANCE := 0.12
 const EXTRACTION_WINDOW_DURATION := 10.0
+const RUN_SUMMARY_TIMEOUT_MS := 45000
 const STARTER_BACKUP_WEAPON_IDS: Array[String] = [
 	"iron_dagger",
 	"short_bow",
@@ -78,6 +79,10 @@ func _ready() -> void:
 	preferred_farm_floor = 1
 	progression_mode = ProgressionMode.PUSHING
 	_start_floor(1)
+
+
+func _exit_tree() -> void:
+	_save_persistent_build_if_possible()
 
 
 func _load_scenes() -> void:
@@ -176,6 +181,13 @@ func _configure_player_camera() -> void:
 
 
 func _setup_initial_build() -> void:
+	if GameManager.has_persistent_player_build():
+		GameManager.apply_persistent_player_build_to_player(player)
+		GameManager.apply_operation_loadout_to_player(player)
+		_apply_debug_gem_grants()
+		GameManager.save_persistent_player_build_from_player(player)
+		return
+
 	var weapon: EquipmentData = ItemGenerator.generate_equipment("iron_sword", StatTypes.Rarity.WHITE, 1)
 	if weapon:
 		player.equip(weapon)
@@ -186,17 +198,13 @@ func _setup_initial_build() -> void:
 		var gem := DataManager.create_skill_gem(id)
 		if gem:
 			player.add_skill_gem_to_inventory(gem)
-	if debug_grant_all_skill_gems:
-		_grant_all_skill_gems_for_testing()
 
 	# Starter support gems
 	for id in DataManager.get_starter_support_gem_ids():
 		var support := DataManager.create_support_gem(id)
 		if support:
 			player.add_support_gem_to_inventory(support)
-	if debug_grant_all_support_gems:
-		_grant_all_support_gems_for_testing()
-
+	_apply_debug_gem_grants()
 	# Starter modules
 	for id in DataManager.get_starter_module_ids():
 		var mod := DataManager.create_module(id)
@@ -204,6 +212,14 @@ func _setup_initial_build() -> void:
 			player.add_module_to_inventory(mod)
 
 	GameManager.apply_operation_loadout_to_player(player)
+	GameManager.save_persistent_player_build_from_player(player)
+
+
+func _apply_debug_gem_grants() -> void:
+	if debug_grant_all_skill_gems:
+		_grant_all_skill_gems_for_testing()
+	if debug_grant_all_support_gems:
+		_grant_all_support_gems_for_testing()
 
 func _grant_starter_backup_weapons() -> void:
 	for base_id in STARTER_BACKUP_WEAPON_IDS:
@@ -381,31 +397,31 @@ func _is_player_melee_context() -> bool:
 	return weapon_type == StatTypes.WeaponType.SWORD or weapon_type == StatTypes.WeaponType.DAGGER
 
 
-func _on_enemy_died(enemy: Node, position: Vector2) -> void:
+func _on_enemy_died(enemy: Node, drop_position: Vector2) -> void:
 	var enemy_base: EnemyBase = enemy as EnemyBase
 	if enemy_base != null:
 		if enemy_base.is_boss:
 			boss_kills_on_floor += 1
-			GameManager.add_boss_kill_risk()
+			GameManager.add_danger(2)
 		elif enemy_base.is_elite:
 			elite_kills_on_floor += 1
-			GameManager.add_elite_kill_risk()
+			GameManager.add_danger(1)
 
 	if randf() < 0.14:  # 14% equipment drop chance
-		_drop_item(position)
+		_drop_item(drop_position)
 	if randf() < GEM_DROP_CHANCE:  # 1.0% gem drop chance
-		_drop_gem(position)
+		_drop_gem(drop_position)
 	if randf() < MATERIAL_DROP_CHANCE:  # 12% material drop chance
-		_drop_material(position)
+		_drop_material(drop_position)
 	if randf() < 0.012:  # 1.2% module drop chance
-		_drop_module(position)
+		_drop_module(drop_position)
 
 	_update_progression_hud()
 	if floor_objective_type == FloorObjectiveType.BOSS_KILL and boss_kills_on_floor >= required_boss_kills:
 		await _on_floor_objective_completed()
 
 
-func _drop_item(position: Vector2) -> void:
+func _drop_item(drop_position: Vector2) -> void:
 	var slots: Array[StatTypes.EquipmentSlot] = [
 		StatTypes.EquipmentSlot.MAIN_HAND,
 		StatTypes.EquipmentSlot.MAIN_HAND,  # weapon weight x2
@@ -424,15 +440,15 @@ func _drop_item(position: Vector2) -> void:
 	var drop_level: int = GameManager.get_effective_drop_level(current_floor)
 	var equipment: EquipmentData = ItemGenerator.generate_random_equipment(slot, drop_level)
 	if equipment:
-		_spawn_dropped_item(equipment, position)
+		_spawn_dropped_item(equipment, drop_position)
 
 
-func _drop_gem(position: Vector2) -> void:
+func _drop_gem(drop_position: Vector2) -> void:
 	var effective_level: int = GameManager.get_effective_drop_level(current_floor)
 	var level: int = _roll_gem_drop_level(effective_level)
 	var gem: Resource = _create_random_gem(level)
 	if gem != null:
-		_spawn_dropped_item(gem, position)
+		_spawn_dropped_item(gem, drop_position)
 
 
 func _create_random_gem(level: int) -> Resource:
@@ -485,14 +501,14 @@ func _roll_gem_drop_level(floor_number: int) -> int:
 	return clampi(randi_range(min_lv, max_lv), 1, Constants.MAX_GEM_LEVEL)
 
 
-func _drop_module(position: Vector2) -> void:
+func _drop_module(drop_position: Vector2) -> void:
 	var effective_level: int = GameManager.get_effective_drop_level(current_floor)
 	var module_id: String = _pick_module_id_for_level(effective_level)
 	if module_id.is_empty():
 		return
 	var mod := DataManager.create_module(module_id)
 	if mod:
-		_spawn_dropped_item(mod, position)
+		_spawn_dropped_item(mod, drop_position)
 
 
 func _pick_module_id_for_level(effective_level: int) -> String:
@@ -552,7 +568,7 @@ func _target_module_load(effective_level: int) -> float:
 	return 8.0
 
 
-func _drop_material(position: Vector2) -> void:
+func _drop_material(drop_position: Vector2) -> void:
 	var ids := DataManager.get_all_material_ids()
 	if ids.is_empty():
 		return
@@ -561,24 +577,24 @@ func _drop_material(position: Vector2) -> void:
 	_spawn_dropped_item({
 		"material_id": id,
 		"amount": amount,
-	}, position)
+	}, drop_position)
 
 
-func _spawn_dropped_item(item: Variant, position: Vector2) -> void:
+func _spawn_dropped_item(item: Variant, drop_position: Vector2) -> void:
 	if dropped_item_scene == null:
 		return
 
 	var dropped: DroppedItem = dropped_item_scene.instantiate()
-	dropped.global_position = position + Vector2(randf_range(-20, 20), randf_range(-20, 20))
+	dropped.global_position = drop_position + Vector2(randf_range(-20, 20), randf_range(-20, 20))
 	dropped.setup(item)
 	add_child(dropped)
 
 	if item is EquipmentData:
-		EventBus.equipment_dropped.emit(item, position)
+		EventBus.equipment_dropped.emit(item, drop_position)
 	elif item is SkillGem or item is SupportGem:
-		EventBus.gem_dropped.emit(item, position)
+		EventBus.gem_dropped.emit(item, drop_position)
 	elif item is Module:
-		EventBus.module_dropped.emit(item, position)
+		EventBus.module_dropped.emit(item, drop_position)
 
 
 func _on_all_enemies_dead() -> void:
@@ -597,7 +613,6 @@ func _on_floor_objective_completed() -> void:
 		return
 	is_floor_active = false
 	enemy_spawner.clear_enemies()
-	GameManager.add_floor_clear_risk()
 	var cleared_floor: int = current_floor
 	if GameManager.should_open_extraction_window(cleared_floor):
 		var extracted: bool = await _run_extraction_window(cleared_floor)
@@ -648,7 +663,6 @@ func _on_player_died() -> void:
 		var lost_gems: int = int(lost_loot.get("total_gems", 0))
 		var lost_modules: int = int(lost_loot.get("modules", 0))
 		print("[RunFail] Loot lost: eq=%d gems=%d modules=%d" % [lost_equipment, lost_gems, lost_modules])
-		GameManager.reset_risk()
 		GameManager.reset_operation()
 		progression_mode = ProgressionMode.PUSHING
 		pending_failed_floor = 0
@@ -659,7 +673,7 @@ func _on_player_died() -> void:
 			lost_modules,
 		]
 		await _wait_for_run_summary("Run Failed", fail_body)
-		get_tree().change_scene_to_file(LOBBY_SCENE_PATH)
+		_return_to_lobby()
 		return
 
 	await get_tree().create_timer(2.0).timeout
@@ -769,7 +783,12 @@ func _update_hud() -> void:
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
-		if _run_fail_waiting_return and event.keycode == KEY_E:
+		if _run_fail_waiting_return and (
+			event.keycode == KEY_E
+			or event.keycode == KEY_ENTER
+			or event.keycode == KEY_ESCAPE
+			or event.keycode == KEY_SPACE
+		):
 			_run_fail_return_confirmed = true
 			get_viewport().set_input_as_handled()
 			return
@@ -824,7 +843,7 @@ func _run_extraction_window(floor_number: int) -> bool:
 
 
 func _reset_after_extraction() -> void:
-	print("[Extracted] floor=%d risk=%d" % [current_floor, GameManager.risk_score])
+	print("[Extracted] floor=%d" % current_floor)
 	progression_mode = ProgressionMode.PUSHING
 	pending_failed_floor = 0
 	preferred_farm_floor = 1
@@ -834,7 +853,6 @@ func _reset_after_extraction() -> void:
 	var moved_gems: int = int(moved.get("total_gems", 0))
 	var moved_modules: int = int(moved.get("modules", 0))
 	var stash_total: int = int(summary.get("stash_total", 0))
-	GameManager.reset_risk()
 	GameManager.restore_lives()
 	var extraction_body := "Moved to stash:\n- Equipment: %d\n- Gems: %d\n- Modules: %d\n- Materials in stash: %d" % [
 		moved_equipment,
@@ -843,7 +861,7 @@ func _reset_after_extraction() -> void:
 		stash_total,
 	]
 	await _wait_for_run_summary("Extraction Success", extraction_body)
-	get_tree().change_scene_to_file(LOBBY_SCENE_PATH)
+	_return_to_lobby()
 
 
 func _on_run_summary_confirmed() -> void:
@@ -857,11 +875,38 @@ func _wait_for_run_summary(title: String, body: String) -> void:
 	_run_fail_return_confirmed = false
 	if hud != null and hud.has_method("show_run_summary"):
 		hud.show_run_summary(title, body)
+	var started_ms: int = Time.get_ticks_msec()
 	while not _run_fail_return_confirmed:
+		if Time.get_ticks_msec() - started_ms >= RUN_SUMMARY_TIMEOUT_MS:
+			push_warning("Run summary confirm timeout, continue to lobby automatically.")
+			_run_fail_return_confirmed = true
+			break
 		await get_tree().process_frame
 	_run_fail_waiting_return = false
 	if hud != null and hud.has_method("hide_run_summary"):
 		hud.hide_run_summary()
+
+
+func _return_to_lobby() -> void:
+	_run_fail_waiting_return = false
+	_run_fail_return_confirmed = false
+	_save_persistent_build_if_possible()
+	get_tree().paused = false
+	call_deferred("_change_scene_to_lobby_deferred")
+
+
+func _save_persistent_build_if_possible() -> void:
+	if player == null:
+		return
+	if not is_instance_valid(player):
+		return
+	GameManager.save_persistent_player_build_from_player(player)
+
+
+func _change_scene_to_lobby_deferred() -> void:
+	var err: Error = get_tree().change_scene_to_file(LOBBY_SCENE_PATH)
+	if err != OK:
+		push_error("Failed to change scene to lobby (%s), error=%d" % [LOBBY_SCENE_PATH, int(err)])
 
 
 func _toggle_equipment_panel() -> void:
