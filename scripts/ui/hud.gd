@@ -62,7 +62,6 @@ func _connect_signals() -> void:
 	EventBus.kill_count_changed.connect(_on_kill_count_changed)
 	EventBus.floor_entered.connect(_on_floor_entered)
 	EventBus.item_picked_up.connect(_on_item_picked_up)
-	EventBus.gem_leveled_up.connect(_on_gem_leveled_up)
 	EventBus.status_applied.connect(_on_status_applied)
 	EventBus.status_removed.connect(_on_status_removed)
 	EventBus.loot_filter_changed.connect(_on_loot_filter_changed)
@@ -155,27 +154,6 @@ func _on_item_picked_up(_item_data: Variant) -> void:
 		update_inventory(player.get_inventory_size())
 
 	_show_pickup_message(_item_data)
-
-
-func _on_gem_leveled_up(gem: Resource, new_level: int) -> void:
-	if gem == null:
-		return
-	if gem is SkillGem:
-		var skill := gem as SkillGem
-		_add_feed_entry(
-			"lvl:skill:%s" % skill.id,
-			"技能寶石升級：%s Lv%d" % [skill.display_name, new_level],
-			1,
-			Color(0.4, 1.0, 0.55)
-		)
-	elif gem is SupportGem:
-		var support := gem as SupportGem
-		_add_feed_entry(
-			"lvl:support:%s" % support.id,
-			"輔助寶石升級：%s Lv%d" % [support.display_name, new_level],
-			1,
-			Color(0.45, 0.8, 1.0)
-		)
 
 
 func update_inventory(count: int) -> void:

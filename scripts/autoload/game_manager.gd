@@ -51,6 +51,7 @@ var operation_loadout: Dictionary = {
 	"support_gems": [],
 	"modules": [],
 }
+var operation_loot_ledger: Array[Dictionary] = []
 var persistent_player_build: Dictionary = {}
 var last_run_extracted_summary: Dictionary = {}
 var last_run_failed_summary: Dictionary = {}
@@ -92,6 +93,15 @@ const EQUIPMENT_SLOT_ORDER: Array[int] = [
 	StatTypes.EquipmentSlot.RING_1,
 	StatTypes.EquipmentSlot.RING_2,
 ]
+const LOOT_CATEGORY_EQUIPMENT := "equipment"
+const LOOT_CATEGORY_SKILL_GEM := "skill_gem"
+const LOOT_CATEGORY_SUPPORT_GEM := "support_gem"
+const LOOT_CATEGORY_MODULE := "module"
+const LOOT_ORIGIN_LOADOUT := "loadout"
+const LOOT_ORIGIN_DISPLACED := "displaced"
+const LOOT_STATE_INVENTORY := "inventory"
+const LOOT_STATE_EQUIPPED := "equipped"
+const LOOT_STATE_MISSING := "missing"
 
 
 func _ready() -> void:
@@ -112,6 +122,10 @@ func _connect_signals() -> void:
 	EventBus.enemy_died.connect(_on_enemy_died)
 	EventBus.player_died.connect(_on_player_died)
 	EventBus.item_picked_up.connect(_on_item_picked_up)
+	EventBus.equipment_changed.connect(_on_equipment_changed)
+	EventBus.skill_gem_changed.connect(_on_skill_gem_changed)
+	EventBus.support_gem_changed.connect(_on_support_gem_changed)
+	EventBus.module_changed.connect(_on_module_changed)
 
 
 func _process(delta: float) -> void:
@@ -181,6 +195,7 @@ func start_operation(
 		"danger": 0,
 	}
 	clear_run_backpack_loot()
+	clear_operation_loot_ledger()
 	_emit_operation_session_changed()
 
 
@@ -265,6 +280,8 @@ func close_extraction_window(floor_number: int, extracted: bool, player: Player 
 	extraction_window_open = false
 	EventBus.extraction_window_closed.emit(floor_number, extracted)
 	if extracted:
+		_preserve_equipped_run_equipment(player)
+		_strip_run_backpack_loot_from_player(player)
 		var moved_loot := deposit_run_backpack_loot_to_stash()
 		last_run_extracted_summary = {
 			"floor": floor_number,
@@ -280,6 +297,7 @@ func apply_death_material_penalty(player: Player) -> Dictionary:
 	if player == null:
 		return {"kept": 0, "lost": 0}
 	var kept_total: int = _get_material_total(player)
+	_strip_run_backpack_loot_from_player(player)
 	var lost_loot := lose_run_backpack_loot()
 	var summary := {
 		"kept": kept_total,
@@ -319,6 +337,10 @@ func clear_operation_loadout() -> void:
 	}
 
 
+func clear_operation_loot_ledger() -> void:
+	operation_loot_ledger.clear()
+
+
 func has_persistent_player_build() -> bool:
 	return not persistent_player_build.is_empty()
 
@@ -347,13 +369,13 @@ func get_persistent_player_build_snapshot() -> Dictionary:
 
 func add_loot_to_run_backpack(item: Variant) -> void:
 	if item is EquipmentData:
-		run_backpack_loot.equipment.append((item as EquipmentData).duplicate(true))
+		run_backpack_loot.equipment.append(item)
 	elif item is SkillGem:
-		run_backpack_loot.skill_gems.append((item as SkillGem).duplicate(true))
+		run_backpack_loot.skill_gems.append(item)
 	elif item is SupportGem:
-		run_backpack_loot.support_gems.append((item as SupportGem).duplicate(true))
+		run_backpack_loot.support_gems.append(item)
 	elif item is Module:
-		run_backpack_loot.modules.append((item as Module).duplicate_module())
+		run_backpack_loot.modules.append(item)
 
 
 func get_run_backpack_loot_counts() -> Dictionary:
@@ -437,19 +459,186 @@ func apply_operation_loadout_to_player(player: Player) -> void:
 		var eq: EquipmentData = item
 		if not player.add_to_inventory(eq):
 			stash_loot.equipment.append(eq)
+		else:
+			_track_operation_loot(eq, LOOT_CATEGORY_EQUIPMENT, LOOT_ORIGIN_LOADOUT, LOOT_STATE_INVENTORY)
 	for item in operation_loadout.skill_gems:
 		var gem: SkillGem = item
 		if not player.add_skill_gem_to_inventory(gem):
 			stash_loot.skill_gems.append(gem)
+		else:
+			_track_operation_loot(gem, LOOT_CATEGORY_SKILL_GEM, LOOT_ORIGIN_LOADOUT, LOOT_STATE_INVENTORY)
 	for item in operation_loadout.support_gems:
 		var support: SupportGem = item
 		if not player.add_support_gem_to_inventory(support):
 			stash_loot.support_gems.append(support)
+		else:
+			_track_operation_loot(support, LOOT_CATEGORY_SUPPORT_GEM, LOOT_ORIGIN_LOADOUT, LOOT_STATE_INVENTORY)
 	for item in operation_loadout.modules:
 		var mod: Module = item
 		if not player.add_module_to_inventory(mod):
 			stash_loot.modules.append(mod)
+		else:
+			_track_operation_loot(mod, LOOT_CATEGORY_MODULE, LOOT_ORIGIN_LOADOUT, LOOT_STATE_INVENTORY)
 	clear_operation_loadout()
+
+
+func _track_operation_loot(item: Variant, category: String, origin: String, state: String) -> void:
+	if item == null:
+		return
+	var idx := _find_operation_loot_record(item, category)
+	if idx >= 0:
+		var existing: Dictionary = operation_loot_ledger[idx]
+		existing["origin"] = origin
+		existing["state"] = state
+		operation_loot_ledger[idx] = existing
+		return
+	operation_loot_ledger.append({
+		"item": item,
+		"category": category,
+		"origin": origin,
+		"state": state,
+	})
+
+
+func _find_operation_loot_record(item: Variant, category: String) -> int:
+	if item == null:
+		return -1
+	for i in range(operation_loot_ledger.size()):
+		var rec: Dictionary = operation_loot_ledger[i]
+		if str(rec.get("category", "")) == category and rec.get("item", null) == item:
+			return i
+	return -1
+
+
+func _sync_operation_loot_states(player: Player) -> void:
+	if player == null:
+		return
+	for i in range(operation_loot_ledger.size()):
+		var rec: Dictionary = operation_loot_ledger[i]
+		var item: Variant = rec.get("item", null)
+		var category: String = str(rec.get("category", ""))
+		if category == "":
+			continue
+		rec["state"] = _get_operation_loot_state(player, item, category)
+		operation_loot_ledger[i] = rec
+
+
+func _get_operation_loot_state(player: Player, item: Variant, category: String) -> String:
+	if player == null or item == null:
+		return LOOT_STATE_MISSING
+	match category:
+		LOOT_CATEGORY_EQUIPMENT:
+			if item is EquipmentData:
+				if _is_equipment_currently_equipped_by_player(player, item as EquipmentData):
+					return LOOT_STATE_EQUIPPED
+				if _is_equipment_in_player_inventory(player, item as EquipmentData):
+					return LOOT_STATE_INVENTORY
+		LOOT_CATEGORY_SKILL_GEM:
+			if item is SkillGem:
+				if _is_skill_gem_equipped_by_player(player, item as SkillGem):
+					return LOOT_STATE_EQUIPPED
+				if _is_skill_gem_in_player_inventory(player, item as SkillGem):
+					return LOOT_STATE_INVENTORY
+		LOOT_CATEGORY_SUPPORT_GEM:
+			if item is SupportGem:
+				if _is_support_gem_equipped_by_player(player, item as SupportGem):
+					return LOOT_STATE_EQUIPPED
+				if _is_support_gem_in_player_inventory(player, item as SupportGem):
+					return LOOT_STATE_INVENTORY
+		LOOT_CATEGORY_MODULE:
+			if item is Module:
+				if _is_module_equipped_by_player(player, item as Module):
+					return LOOT_STATE_EQUIPPED
+				if _is_module_in_player_inventory(player, item as Module):
+					return LOOT_STATE_INVENTORY
+	return LOOT_STATE_MISSING
+
+
+func _is_equipment_in_player_inventory(player: Player, item: EquipmentData) -> bool:
+	if player == null or item == null:
+		return false
+	for inv_item in player.inventory:
+		if inv_item == item:
+			return true
+	return false
+
+
+func _is_skill_gem_equipped_by_player(player: Player, item: SkillGem) -> bool:
+	if player == null or item == null:
+		return false
+	return player.gem_link != null and player.gem_link.skill_gem == item
+
+
+func _is_skill_gem_in_player_inventory(player: Player, item: SkillGem) -> bool:
+	if player == null or item == null:
+		return false
+	for gem in player.skill_gem_inventory:
+		if gem == item:
+			return true
+	return false
+
+
+func _is_support_gem_equipped_by_player(player: Player, item: SupportGem) -> bool:
+	if player == null or item == null:
+		return false
+	if player.gem_link == null:
+		return false
+	for gem in player.gem_link.support_gems:
+		if gem == item:
+			return true
+	return false
+
+
+func _is_support_gem_in_player_inventory(player: Player, item: SupportGem) -> bool:
+	if player == null or item == null:
+		return false
+	for gem in player.support_gem_inventory:
+		if gem == item:
+			return true
+	return false
+
+
+func _is_module_equipped_by_player(player: Player, item: Module) -> bool:
+	if player == null or item == null:
+		return false
+	if player.core_board == null:
+		return false
+	for mod in player.core_board.slots:
+		if mod == item:
+			return true
+	return false
+
+
+func _is_module_in_player_inventory(player: Player, item: Module) -> bool:
+	if player == null or item == null:
+		return false
+	for mod in player.module_inventory:
+		if mod == item:
+			return true
+	return false
+
+
+func _is_run_backpack_loot(item: Variant, category: String) -> bool:
+	if item == null:
+		return false
+	match category:
+		LOOT_CATEGORY_EQUIPMENT:
+			for eq in run_backpack_loot.equipment:
+				if eq == item:
+					return true
+		LOOT_CATEGORY_SKILL_GEM:
+			for gem in run_backpack_loot.skill_gems:
+				if gem == item:
+					return true
+		LOOT_CATEGORY_SUPPORT_GEM:
+			for gem in run_backpack_loot.support_gems:
+				if gem == item:
+					return true
+		LOOT_CATEGORY_MODULE:
+			for mod in run_backpack_loot.modules:
+				if mod == item:
+					return true
+	return false
 
 
 func _capture_player_build(player: Player) -> Dictionary:
@@ -566,10 +755,18 @@ func _clone_resource_array(source: Array) -> Array:
 
 func deposit_run_backpack_loot_to_stash() -> Dictionary:
 	var moved := get_run_backpack_loot_counts()
-	stash_loot.equipment.append_array(run_backpack_loot.equipment)
-	stash_loot.skill_gems.append_array(run_backpack_loot.skill_gems)
-	stash_loot.support_gems.append_array(run_backpack_loot.support_gems)
-	stash_loot.modules.append_array(run_backpack_loot.modules)
+	for item in run_backpack_loot.equipment:
+		if item is EquipmentData:
+			stash_loot.equipment.append((item as EquipmentData).duplicate(true))
+	for item in run_backpack_loot.skill_gems:
+		if item is SkillGem:
+			stash_loot.skill_gems.append((item as SkillGem).duplicate(true))
+	for item in run_backpack_loot.support_gems:
+		if item is SupportGem:
+			stash_loot.support_gems.append((item as SupportGem).duplicate(true))
+	for item in run_backpack_loot.modules:
+		if item is Module:
+			stash_loot.modules.append((item as Module).duplicate_module())
 	clear_run_backpack_loot()
 	return moved
 
@@ -578,6 +775,158 @@ func lose_run_backpack_loot() -> Dictionary:
 	var lost := get_run_backpack_loot_counts()
 	clear_run_backpack_loot()
 	return lost
+
+
+func resolve_operation_loadout_for_lobby(player: Player) -> void:
+	if player == null:
+		return
+	_sync_operation_loot_states(player)
+
+	for rec in operation_loot_ledger:
+		var item: Variant = rec.get("item", null)
+		var category: String = str(rec.get("category", ""))
+		if category == "":
+			continue
+		var state: String = str(rec.get("state", LOOT_STATE_MISSING))
+		if state != LOOT_STATE_INVENTORY:
+			continue
+		_remove_operation_loot_ref_from_player(player, item, category)
+		_stash_operation_loot_copy(item, category)
+
+	clear_operation_loot_ledger()
+
+	if player.stats != null:
+		player.current_hp = minf(player.current_hp, player.stats.get_stat(StatTypes.Stat.HP))
+		player.call("_emit_health_changed")
+
+
+func resolve_operation_equipment_for_lobby(player: Player) -> void:
+	resolve_operation_loadout_for_lobby(player)
+
+
+func _remove_operation_loot_ref_from_player(player: Player, item: Variant, category: String) -> void:
+	match category:
+		LOOT_CATEGORY_EQUIPMENT:
+			if item is EquipmentData:
+				_remove_equipment_ref_from_player(player, item as EquipmentData)
+		LOOT_CATEGORY_SKILL_GEM:
+			if item is SkillGem:
+				_remove_skill_gem_ref_from_player(player, item as SkillGem)
+		LOOT_CATEGORY_SUPPORT_GEM:
+			if item is SupportGem:
+				_remove_support_gem_ref_from_player(player, item as SupportGem)
+		LOOT_CATEGORY_MODULE:
+			if item is Module:
+				_remove_module_ref_from_player(player, item as Module)
+
+
+func _stash_operation_loot_copy(item: Variant, category: String) -> void:
+	match category:
+		LOOT_CATEGORY_EQUIPMENT:
+			if item is EquipmentData:
+				stash_loot.equipment.append((item as EquipmentData).duplicate(true))
+		LOOT_CATEGORY_SKILL_GEM:
+			if item is SkillGem:
+				stash_loot.skill_gems.append((item as SkillGem).duplicate(true))
+		LOOT_CATEGORY_SUPPORT_GEM:
+			if item is SupportGem:
+				stash_loot.support_gems.append((item as SupportGem).duplicate(true))
+		LOOT_CATEGORY_MODULE:
+			if item is Module:
+				stash_loot.modules.append((item as Module).duplicate_module())
+
+
+func _preserve_equipped_run_equipment(player: Player) -> void:
+	if player == null:
+		return
+	for i in range(run_backpack_loot.equipment.size() - 1, -1, -1):
+		var item: Variant = run_backpack_loot.equipment[i]
+		if item is EquipmentData and _is_equipment_currently_equipped_by_player(player, item as EquipmentData):
+			run_backpack_loot.equipment.remove_at(i)
+
+
+func _is_equipment_currently_equipped_by_player(player: Player, item: EquipmentData) -> bool:
+	if player == null or item == null:
+		return false
+	for slot_id in EQUIPMENT_SLOT_ORDER:
+		if player.get_equipped(slot_id) == item:
+			return true
+	return false
+
+
+func _strip_run_backpack_loot_from_player(player: Player) -> void:
+	if player == null:
+		return
+
+	for item in run_backpack_loot.equipment:
+		if item is EquipmentData:
+			_remove_equipment_ref_from_player(player, item as EquipmentData)
+	for item in run_backpack_loot.skill_gems:
+		if item is SkillGem:
+			_remove_skill_gem_ref_from_player(player, item as SkillGem)
+	for item in run_backpack_loot.support_gems:
+		if item is SupportGem:
+			_remove_support_gem_ref_from_player(player, item as SupportGem)
+	for item in run_backpack_loot.modules:
+		if item is Module:
+			_remove_module_ref_from_player(player, item as Module)
+
+	if player.stats != null:
+		player.current_hp = minf(player.current_hp, player.stats.get_stat(StatTypes.Stat.HP))
+		player.call("_emit_health_changed")
+
+
+func _remove_equipment_ref_from_player(player: Player, target: EquipmentData) -> void:
+	if target == null:
+		return
+	for i in range(player.inventory.size() - 1, -1, -1):
+		if player.inventory[i] == target:
+			player.inventory.remove_at(i)
+			return
+	for slot_id in EQUIPMENT_SLOT_ORDER:
+		if player.get_equipped(slot_id) == target:
+			player.unequip(slot_id)
+			return
+
+
+func _remove_skill_gem_ref_from_player(player: Player, target: SkillGem) -> void:
+	if target == null:
+		return
+	if player.gem_link != null and player.gem_link.skill_gem == target:
+		player.gem_link.set_skill_gem(null)
+		return
+	for i in range(player.skill_gem_inventory.size() - 1, -1, -1):
+		if player.get_skill_gem_in_inventory(i) == target:
+			player.remove_skill_gem_from_inventory(i)
+			return
+
+
+func _remove_support_gem_ref_from_player(player: Player, target: SupportGem) -> void:
+	if target == null:
+		return
+	if player.gem_link != null:
+		for i in range(player.gem_link.support_gems.size()):
+			if player.gem_link.support_gems[i] == target:
+				player.gem_link.set_support_gem(i, null)
+				return
+	for i in range(player.support_gem_inventory.size() - 1, -1, -1):
+		if player.get_support_gem_in_inventory(i) == target:
+			player.remove_support_gem_from_inventory(i)
+			return
+
+
+func _remove_module_ref_from_player(player: Player, target: Module) -> void:
+	if target == null:
+		return
+	for i in range(player.module_inventory.size() - 1, -1, -1):
+		if player.module_inventory[i] == target:
+			player.remove_module_from_inventory(i)
+			return
+	if player.core_board != null and player.stats != null:
+		for i in range(player.core_board.slots.size() - 1, -1, -1):
+			if player.core_board.slots[i] == target:
+				player.core_board.unequip_at(i, player.stats)
+				return
 
 
 func get_last_run_extracted_summary() -> Dictionary:
@@ -716,6 +1065,48 @@ func _on_player_died() -> void:
 
 func _on_item_picked_up(_item_data) -> void:
 	session_stats.items_picked += 1
+
+
+func _on_equipment_changed(
+	_slot: StatTypes.EquipmentSlot,
+	old_item: EquipmentData,
+	new_item: EquipmentData
+) -> void:
+	if not is_in_abyss:
+		return
+	_track_displaced_operation_loot(old_item, new_item, LOOT_CATEGORY_EQUIPMENT)
+
+
+func _on_skill_gem_changed(old_gem: SkillGem, new_gem: SkillGem) -> void:
+	if not is_in_abyss:
+		return
+	_track_displaced_operation_loot(old_gem, new_gem, LOOT_CATEGORY_SKILL_GEM)
+
+
+func _on_support_gem_changed(_slot_index: int, old_gem: SupportGem, new_gem: SupportGem) -> void:
+	if not is_in_abyss:
+		return
+	_track_displaced_operation_loot(old_gem, new_gem, LOOT_CATEGORY_SUPPORT_GEM)
+
+
+func _on_module_changed(_slot_index: int, old_module: Module, new_module: Module) -> void:
+	if not is_in_abyss:
+		return
+	_track_displaced_operation_loot(old_module, new_module, LOOT_CATEGORY_MODULE)
+
+
+func _track_displaced_operation_loot(old_item: Variant, new_item: Variant, category: String) -> void:
+	if old_item == null or new_item == null:
+		return
+	var new_is_tracked: bool = _find_operation_loot_record(new_item, category) >= 0
+	var new_is_run_loot: bool = _is_run_backpack_loot(new_item, category)
+	if not new_is_tracked and not new_is_run_loot:
+		return
+	if _find_operation_loot_record(old_item, category) >= 0:
+		return
+	if _is_run_backpack_loot(old_item, category):
+		return
+	_track_operation_loot(old_item, category, LOOT_ORIGIN_DISPLACED, LOOT_STATE_INVENTORY)
 
 
 func _update_dps() -> void:

@@ -10,6 +10,22 @@ This format is based on Keep a Changelog and uses simple sections:
 
 ## [Unreleased]
 
+### Changed
+- Unified operation loadout return logic into a single loot ledger state machine for all tracked categories:
+  - Equipment
+  - Skill Gems
+  - Support Gems
+  - Modules
+- Added dedicated transition events for runtime swap tracking:
+  - `support_gem_changed`
+  - `module_changed`
+
+### Fixed
+- Fixed displaced item tracking when swapping with run-dropped items:
+  - Replacing equipped equipment with run-dropped equipment now correctly tracks the old item for end-of-run resolution.
+  - Same displaced-tracking rule now applies consistently to skill gems, support gems, and modules.
+- Fixed end-of-run reconciliation edge cases where operation loadout items could remain in player inventory instead of being resolved by policy.
+
 ## [2.0.1] - 2026-02-27
 
 ### Fixed

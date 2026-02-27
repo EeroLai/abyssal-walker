@@ -406,11 +406,18 @@ theme_override_styles/hover = SubResource("StyleBoxFlat_input")
 theme_override_styles/pressed = SubResource("StyleBoxFlat_input")
 theme_override_styles/focus = SubResource("StyleBoxFlat_input")
 
-[node name="StashList" type="ItemList" parent="PrepOverlay/PrepPanel/PrepContent/LootRow/StashSide/StashBody"]
+[node name="StashScroll" type="ScrollContainer" parent="PrepOverlay/PrepPanel/PrepContent/LootRow/StashSide/StashBody"]
 custom_minimum_size = Vector2(0, 170)
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_styles/panel = SubResource("StyleBoxFlat_list")
+
+[node name="StashGrid" type="GridContainer" parent="PrepOverlay/PrepPanel/PrepContent/LootRow/StashSide/StashBody/StashScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+columns = 7
+theme_override_constants/h_separation = 6
+theme_override_constants/v_separation = 6
 
 [node name="ActionSide" type="PanelContainer" parent="PrepOverlay/PrepPanel/PrepContent/LootRow"]
 layout_mode = 2
@@ -477,8 +484,15 @@ theme_override_styles/hover = SubResource("StyleBoxFlat_input")
 theme_override_styles/pressed = SubResource("StyleBoxFlat_input")
 theme_override_styles/focus = SubResource("StyleBoxFlat_input")
 
-[node name="LoadoutList" type="ItemList" parent="PrepOverlay/PrepPanel/PrepContent/LootRow/LoadoutSide/LoadoutBody"]
+[node name="LoadoutScroll" type="ScrollContainer" parent="PrepOverlay/PrepPanel/PrepContent/LootRow/LoadoutSide/LoadoutBody"]
 custom_minimum_size = Vector2(0, 170)
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_styles/panel = SubResource("StyleBoxFlat_list")
+
+[node name="LoadoutGrid" type="GridContainer" parent="PrepOverlay/PrepPanel/PrepContent/LootRow/LoadoutSide/LoadoutBody/LoadoutScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+columns = 7
+theme_override_constants/h_separation = 6
+theme_override_constants/v_separation = 6

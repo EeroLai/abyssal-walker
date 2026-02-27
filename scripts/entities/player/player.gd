@@ -257,16 +257,12 @@ func get_material_count(id: String) -> int:
 func add_skill_gem_to_inventory(gem: SkillGem) -> bool:
 	if gem == null:
 		return false
-	if _try_merge_skill_gem(gem):
-		return true
 	return _store_in_first_free_slot(skill_gem_inventory, MAX_SKILL_GEM_INVENTORY, gem)
 
 
 func add_support_gem_to_inventory(gem: SupportGem) -> bool:
 	if gem == null:
 		return false
-	if _try_merge_support_gem(gem):
-		return true
 	return _store_in_first_free_slot(support_gem_inventory, MAX_SUPPORT_GEM_INVENTORY, gem)
 
 
@@ -301,15 +297,18 @@ func equip_skill_from_inventory(index: int) -> bool:
 		_compact_skill_gem_inventory()
 
 	gem_link.set_skill_gem(gem)
+	EventBus.skill_gem_changed.emit(old, gem)
 	return true
 
 
 func unequip_skill_to_inventory() -> bool:
 	if gem_link.skill_gem == null:
 		return false
-	if not _store_skill_gem_without_merge(gem_link.skill_gem):
+	var old := gem_link.skill_gem
+	if not _store_skill_gem_without_merge(old):
 		return false
 	gem_link.set_skill_gem(null)
+	EventBus.skill_gem_changed.emit(old, null)
 	return true
 
 
@@ -321,8 +320,11 @@ func equip_support_from_inventory(index: int) -> bool:
 		return false
 	if not gem_link.add_support_gem(gem):
 		return false
+	var slot_index := gem_link.support_gems.find(gem)
 	_set_support_gem_in_inventory(index, null)
 	_compact_support_gem_inventory()
+	if slot_index >= 0:
+		EventBus.support_gem_changed.emit(slot_index, null, gem)
 	return true
 
 
@@ -333,6 +335,7 @@ func unequip_support_to_inventory(index: int) -> bool:
 	if not _store_support_gem_without_merge(gem):
 		gem_link.set_support_gem(index, gem)
 		return false
+	EventBus.support_gem_changed.emit(index, gem, null)
 	return true
 
 
@@ -364,9 +367,11 @@ func swap_skill_with_inventory(index: int) -> bool:
 	if index < 0 or index >= MAX_SKILL_GEM_INVENTORY:
 		return false
 	_ensure_skill_gem_size(index)
+	var old_equipped: SkillGem = gem_link.skill_gem
 	var temp: SkillGem = skill_gem_inventory[index]
-	skill_gem_inventory[index] = gem_link.skill_gem
+	skill_gem_inventory[index] = old_equipped
 	gem_link.set_skill_gem(temp)
+	EventBus.skill_gem_changed.emit(old_equipped, temp)
 	return true
 
 
@@ -388,6 +393,8 @@ func swap_support_with_inventory(slot_index: int, inv_index: int) -> bool:
 	support_gem_inventory[inv_index] = current_slot
 	if inv_gem == null:
 		gem_link.set_support_gem(slot_index, null)
+	if current_slot != inv_gem:
+		EventBus.support_gem_changed.emit(slot_index, current_slot, inv_gem)
 	return true
 
 
@@ -529,9 +536,7 @@ func _can_merge_same_level_gem(a: Resource, b: Resource) -> bool:
 func _merge_gem_pair(target_gem: Resource) -> void:
 	if target_gem == null:
 		return
-	target_gem.level = mini(target_gem.level + 1, Constants.MAX_GEM_LEVEL)
 	target_gem.experience = 0.0
-	EventBus.gem_leveled_up.emit(target_gem, target_gem.level)
 
 
 
@@ -1273,6 +1278,9 @@ func equip_module_from_inventory(index: int) -> bool:
 	if not core_board.equip(module, stats):
 		module_inventory.insert(index, module)
 		return false
+	var slot_index := core_board.slots.find(module)
+	if slot_index >= 0:
+		EventBus.module_changed.emit(slot_index, null, module)
 	return true
 
 
@@ -1284,4 +1292,5 @@ func unequip_module_to_inventory(slot_index: int) -> bool:
 		return false
 	core_board.unequip(module, stats)
 	module_inventory.append(module)
+	EventBus.module_changed.emit(slot_index, module, null)
 	return true

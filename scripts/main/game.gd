@@ -890,6 +890,8 @@ func _wait_for_run_summary(title: String, body: String) -> void:
 func _return_to_lobby() -> void:
 	_run_fail_waiting_return = false
 	_run_fail_return_confirmed = false
+	if player != null and is_instance_valid(player):
+		GameManager.resolve_operation_loadout_for_lobby(player)
 	_save_persistent_build_if_possible()
 	get_tree().paused = false
 	call_deferred("_change_scene_to_lobby_deferred")

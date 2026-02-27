@@ -25,7 +25,11 @@ signal stats_recalculated
 signal skill_gem_changed(old_gem: SkillGem, new_gem: SkillGem)
 signal support_gem_added(gem: SupportGem, slot_index: int)
 signal support_gem_removed(gem: SupportGem, slot_index: int)
+signal support_gem_changed(slot_index: int, old_gem: SupportGem, new_gem: SupportGem)
 signal gem_leveled_up(gem: Resource, new_level: int)
+
+# Modules
+signal module_changed(slot_index: int, old_module: Module, new_module: Module)
 
 # Floor
 signal floor_entered(floor_number: int)

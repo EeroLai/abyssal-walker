@@ -1,6 +1,9 @@
 extends Control
 
 const GAME_SCENE := "res://scenes/main/game.tscn"
+const SLOT_SIZE := Vector2(48, 48)
+const GRID_COLUMNS := 7
+const MIN_GRID_SLOTS := 63
 
 const LOOT_CATEGORIES: Array[Dictionary] = [
 	{"key": "equipment", "label": "Equipment"},
@@ -17,8 +20,8 @@ const LOOT_CATEGORIES: Array[Dictionary] = [
 @onready var lives_spin: SpinBox = $RootPanel/Content/ConfigRow/LivesCard/LivesCardBody/LivesSpin
 @onready var stash_category: OptionButton = $PrepOverlay/PrepPanel/PrepContent/LootRow/StashSide/StashBody/StashCategory
 @onready var loadout_category: OptionButton = $PrepOverlay/PrepPanel/PrepContent/LootRow/LoadoutSide/LoadoutBody/LoadoutCategory
-@onready var stash_item_list: ItemList = $PrepOverlay/PrepPanel/PrepContent/LootRow/StashSide/StashBody/StashList
-@onready var loadout_item_list: ItemList = $PrepOverlay/PrepPanel/PrepContent/LootRow/LoadoutSide/LoadoutBody/LoadoutList
+@onready var stash_grid: GridContainer = $PrepOverlay/PrepPanel/PrepContent/LootRow/StashSide/StashBody/StashScroll/StashGrid
+@onready var loadout_grid: GridContainer = $PrepOverlay/PrepPanel/PrepContent/LootRow/LoadoutSide/LoadoutBody/LoadoutScroll/LoadoutGrid
 @onready var add_button: Button = $PrepOverlay/PrepPanel/PrepContent/LootRow/ActionSide/ActionBody/AddButton
 @onready var remove_button: Button = $PrepOverlay/PrepPanel/PrepContent/LootRow/ActionSide/ActionBody/RemoveButton
 @onready var clear_loadout_button: Button = $PrepOverlay/PrepPanel/PrepContent/LootRow/ActionSide/ActionBody/ClearLoadoutButton
@@ -30,6 +33,10 @@ const LOOT_CATEGORIES: Array[Dictionary] = [
 
 var _stash_entries: Array[Dictionary] = []
 var _loadout_entries: Array[Dictionary] = []
+var _stash_slot_buttons: Array[Button] = []
+var _loadout_slot_buttons: Array[Button] = []
+var _selected_stash_index: int = -1
+var _selected_loadout_index: int = -1
 
 
 func _ready() -> void:
@@ -54,8 +61,12 @@ func _setup_controls() -> void:
 	_setup_category_options(stash_category)
 	_setup_category_options(loadout_category)
 
-	stash_item_list.select_mode = ItemList.SELECT_SINGLE
-	loadout_item_list.select_mode = ItemList.SELECT_SINGLE
+	stash_grid.columns = GRID_COLUMNS
+	stash_grid.add_theme_constant_override("h_separation", 6)
+	stash_grid.add_theme_constant_override("v_separation", 6)
+	loadout_grid.columns = GRID_COLUMNS
+	loadout_grid.add_theme_constant_override("h_separation", 6)
+	loadout_grid.add_theme_constant_override("v_separation", 6)
 	prep_overlay.visible = false
 	prep_toggle_button.text = "Open Loadout Prep"
 
@@ -90,10 +101,12 @@ func _on_prep_close_pressed() -> void:
 
 
 func _on_stash_category_selected(_index: int) -> void:
+	_selected_stash_index = -1
 	_refresh_stash_list()
 
 
 func _on_loadout_category_selected(_index: int) -> void:
+	_selected_loadout_index = -1
 	_refresh_loadout_list()
 
 
@@ -101,6 +114,7 @@ func _refresh_all() -> void:
 	_refresh_summary()
 	_refresh_stash_list()
 	_refresh_loadout_list()
+	_refresh_transfer_buttons()
 
 
 func _refresh_summary() -> void:
@@ -135,26 +149,168 @@ func _refresh_summary() -> void:
 
 func _refresh_stash_list() -> void:
 	_stash_entries.clear()
-	stash_item_list.clear()
 	var category: String = _selected_category_key(stash_category)
 	var snapshot: Dictionary = GameManager.get_stash_loot_snapshot()
 	var items: Array = snapshot.get(category, [])
 	for i in range(items.size()):
 		_stash_entries.append({"category": category, "index": i})
-		var item: Variant = items[i]
-		stash_item_list.add_item(_loot_label(item))
+	_rebuild_stash_grid(items)
 
 
 func _refresh_loadout_list() -> void:
 	_loadout_entries.clear()
-	loadout_item_list.clear()
 	var category: String = _selected_category_key(loadout_category)
 	var snapshot: Dictionary = GameManager.get_operation_loadout_snapshot()
 	var items: Array = snapshot.get(category, [])
 	for i in range(items.size()):
 		_loadout_entries.append({"category": category, "index": i})
-		var item: Variant = items[i]
-		loadout_item_list.add_item(_loot_label(item))
+	_rebuild_loadout_grid(items)
+
+
+func _rebuild_stash_grid(items: Array) -> void:
+	_clear_grid(stash_grid, _stash_slot_buttons)
+	if _selected_stash_index >= items.size():
+		_selected_stash_index = -1
+	var slot_count := _aligned_slot_count(items.size())
+	for i in range(slot_count):
+		var btn := _create_loot_slot_button(i, true)
+		stash_grid.add_child(btn)
+		_stash_slot_buttons.append(btn)
+		if i < items.size():
+			_configure_filled_slot(btn, items[i], i == _selected_stash_index)
+		else:
+			_configure_empty_slot(btn, i == _selected_stash_index)
+
+
+func _rebuild_loadout_grid(items: Array) -> void:
+	_clear_grid(loadout_grid, _loadout_slot_buttons)
+	if _selected_loadout_index >= items.size():
+		_selected_loadout_index = -1
+	var slot_count := _aligned_slot_count(items.size())
+	for i in range(slot_count):
+		var btn := _create_loot_slot_button(i, false)
+		loadout_grid.add_child(btn)
+		_loadout_slot_buttons.append(btn)
+		if i < items.size():
+			_configure_filled_slot(btn, items[i], i == _selected_loadout_index)
+		else:
+			_configure_empty_slot(btn, i == _selected_loadout_index)
+
+
+func _clear_grid(grid: GridContainer, buttons: Array[Button]) -> void:
+	for child in grid.get_children():
+		grid.remove_child(child)
+		child.queue_free()
+	buttons.clear()
+
+
+func _aligned_slot_count(item_count: int) -> int:
+	var base_count := maxi(item_count, MIN_GRID_SLOTS)
+	var remainder := base_count % GRID_COLUMNS
+	if remainder == 0:
+		return base_count
+	return base_count + (GRID_COLUMNS - remainder)
+
+
+func _create_loot_slot_button(index: int, is_stash: bool) -> Button:
+	var btn := Button.new()
+	btn.custom_minimum_size = SLOT_SIZE
+	btn.clip_text = true
+	btn.text = ""
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.add_theme_font_size_override("font_size", 12)
+	if is_stash:
+		btn.pressed.connect(_on_stash_slot_pressed.bind(index))
+	else:
+		btn.pressed.connect(_on_loadout_slot_pressed.bind(index))
+	return btn
+
+
+func _configure_filled_slot(btn: Button, item: Variant, selected: bool) -> void:
+	btn.text = _loot_slot_short_text(item)
+	btn.tooltip_text = _loot_label(item)
+	btn.add_theme_color_override("font_color", _loot_font_color(item))
+	_apply_slot_style(btn, selected)
+
+
+func _configure_empty_slot(btn: Button, selected: bool) -> void:
+	btn.text = ""
+	btn.tooltip_text = ""
+	btn.remove_theme_color_override("font_color")
+	_apply_slot_style(btn, selected)
+
+
+func _loot_slot_short_text(item: Variant) -> String:
+	if item is EquipmentData:
+		var eq: EquipmentData = item
+		var name := eq.display_name
+		return name.substr(0, mini(2, name.length()))
+	if item is SkillGem:
+		var sg: SkillGem = item
+		return "S%d" % sg.level
+	if item is SupportGem:
+		var sp: SupportGem = item
+		return "U%d" % sp.level
+	if item is Module:
+		var mod: Module = item
+		var mod_name := mod.display_name
+		return mod_name.substr(0, mini(2, mod_name.length()))
+	return "?"
+
+
+func _loot_font_color(item: Variant) -> Color:
+	if item is EquipmentData:
+		var eq: EquipmentData = item
+		return StatTypes.RARITY_COLORS.get(eq.rarity, Color.WHITE)
+	if item is SkillGem:
+		return Color(0.62, 0.86, 1.0)
+	if item is SupportGem:
+		return Color(0.58, 0.96, 0.7)
+	if item is Module:
+		var mod: Module = item
+		return mod.get_type_color()
+	return Color(0.9, 0.9, 0.9)
+
+
+func _apply_slot_style(btn: Button, selected: bool) -> void:
+	var normal := StyleBoxFlat.new()
+	normal.bg_color = Color(0.05, 0.08, 0.13, 1)
+	normal.border_color = Color(0.58, 0.82, 1.0, 1) if selected else Color(0.21, 0.32, 0.45, 0.95)
+	normal.set_border_width_all(2 if selected else 1)
+	normal.set_corner_radius_all(4)
+	btn.add_theme_stylebox_override("normal", normal)
+
+	var hover := normal.duplicate() as StyleBoxFlat
+	if hover != null:
+		if selected:
+			hover.border_color = Color(0.67, 0.88, 1.0, 1)
+		else:
+			hover.border_color = Color(0.42, 0.59, 0.79, 0.95)
+		btn.add_theme_stylebox_override("hover", hover)
+	btn.add_theme_stylebox_override("pressed", normal)
+
+
+func _on_stash_slot_pressed(index: int) -> void:
+	if index < 0 or index >= _stash_entries.size():
+		_selected_stash_index = -1
+	else:
+		_selected_stash_index = index
+	_refresh_stash_list()
+	_refresh_transfer_buttons()
+
+
+func _on_loadout_slot_pressed(index: int) -> void:
+	if index < 0 or index >= _loadout_entries.size():
+		_selected_loadout_index = -1
+	else:
+		_selected_loadout_index = index
+	_refresh_loadout_list()
+	_refresh_transfer_buttons()
+
+
+func _refresh_transfer_buttons() -> void:
+	add_button.disabled = _selected_stash_index < 0 or _selected_stash_index >= _stash_entries.size()
+	remove_button.disabled = _selected_loadout_index < 0 or _selected_loadout_index >= _loadout_entries.size()
 
 
 func _selected_category_key(option: OptionButton) -> String:
@@ -184,30 +340,25 @@ func _loot_label(item: Variant) -> String:
 
 
 func _on_add_pressed() -> void:
-	var selected := stash_item_list.get_selected_items()
-	if selected.is_empty():
+	if _selected_stash_index < 0 or _selected_stash_index >= _stash_entries.size():
 		return
-	var list_index: int = int(selected[0])
-	if list_index < 0 or list_index >= _stash_entries.size():
-		return
-	var entry: Dictionary = _stash_entries[list_index]
+	var entry: Dictionary = _stash_entries[_selected_stash_index]
 	if GameManager.move_stash_loot_to_loadout(str(entry["category"]), int(entry["index"])):
+		_selected_loadout_index = -1
 		_refresh_all()
 
 
 func _on_remove_pressed() -> void:
-	var selected := loadout_item_list.get_selected_items()
-	if selected.is_empty():
+	if _selected_loadout_index < 0 or _selected_loadout_index >= _loadout_entries.size():
 		return
-	var list_index: int = int(selected[0])
-	if list_index < 0 or list_index >= _loadout_entries.size():
-		return
-	var entry: Dictionary = _loadout_entries[list_index]
+	var entry: Dictionary = _loadout_entries[_selected_loadout_index]
 	if GameManager.move_loadout_loot_to_stash(str(entry["category"]), int(entry["index"])):
+		_selected_stash_index = -1
 		_refresh_all()
 
 
 func _on_clear_loadout_pressed() -> void:
+	_selected_loadout_index = -1
 	var snapshot: Dictionary = GameManager.get_operation_loadout_snapshot()
 	for category_entry in LOOT_CATEGORIES:
 		var category: String = str(category_entry["key"])

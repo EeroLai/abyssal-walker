@@ -61,17 +61,9 @@ func get_experience_for_next_level() -> float:
 
 
 func add_experience(amount: float) -> bool:
-	if level >= Constants.MAX_GEM_LEVEL:
-		return false
-
-	experience += amount
-	var leveled_up := false
-	while experience >= get_experience_for_next_level() and level < Constants.MAX_GEM_LEVEL:
-		experience -= get_experience_for_next_level()
-		level += 1
-		leveled_up = true
-
-	return leveled_up
+	if amount > 0.0:
+		experience = 0.0
+	return false
 
 
 func can_use_with_weapon(weapon_type: StatTypes.WeaponType) -> bool:
