@@ -27,3 +27,6 @@ Thumbs.db
 
 # Project docs should never be tracked
 /docs/
+
+# README-only asset import metadata
+readme-assets/*.import
