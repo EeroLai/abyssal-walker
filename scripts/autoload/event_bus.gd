@@ -51,8 +51,6 @@ signal loot_filter_changed(mode: int)
 # Game
 signal game_paused
 signal game_resumed
-signal game_saved
-signal game_loaded
 
 # Session / Run
 signal kill_count_changed(count: int)

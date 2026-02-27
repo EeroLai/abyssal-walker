@@ -96,39 +96,26 @@ func _load_scenes() -> void:
 	if module_panel_scene == null:
 		module_panel_scene = preload("res://scenes/ui/module_panel.tscn")
 
-	# Setup UI panels
-	_setup_equipment_panel()
-	_setup_skill_link_panel()
-	_setup_crafting_panel()
-	_setup_module_panel()
+	_setup_panels()
 
 
-func _setup_equipment_panel() -> void:
-	equipment_panel = equipment_panel_scene.instantiate()
-	ui_layer.add_child(equipment_panel)
-	equipment_panel.closed.connect(_on_equipment_panel_closed)
-	equipment_panel.navigate_to.connect(_on_panel_navigate)
+func _setup_panels() -> void:
+	equipment_panel = _instantiate_panel(equipment_panel_scene) as EquipmentPanel
+	skill_link_panel = _instantiate_panel(skill_link_panel_scene) as SkillLinkPanel
+	crafting_panel = _instantiate_panel(crafting_panel_scene) as CraftingPanel
+	module_panel = _instantiate_panel(module_panel_scene) as ModulePanel
 
 
-func _setup_skill_link_panel() -> void:
-	skill_link_panel = skill_link_panel_scene.instantiate()
-	ui_layer.add_child(skill_link_panel)
-	skill_link_panel.closed.connect(_on_skill_link_panel_closed)
-	skill_link_panel.navigate_to.connect(_on_panel_navigate)
-
-
-func _setup_crafting_panel() -> void:
-	crafting_panel = crafting_panel_scene.instantiate()
-	ui_layer.add_child(crafting_panel)
-	crafting_panel.closed.connect(_on_crafting_panel_closed)
-	crafting_panel.navigate_to.connect(_on_panel_navigate)
-
-
-func _setup_module_panel() -> void:
-	module_panel = module_panel_scene.instantiate()
-	ui_layer.add_child(module_panel)
-	module_panel.closed.connect(_on_module_panel_closed)
-	module_panel.navigate_to.connect(_on_panel_navigate)
+func _instantiate_panel(scene: PackedScene) -> Control:
+	if scene == null or ui_layer == null:
+		return null
+	var panel := scene.instantiate() as Control
+	if panel == null:
+		return null
+	ui_layer.add_child(panel)
+	if panel.has_signal("navigate_to"):
+		panel.connect("navigate_to", Callable(self, "_on_panel_navigate"))
+	return panel
 
 
 func _connect_signals() -> void:
@@ -251,18 +238,18 @@ func _player_has_skill_gem_id(id: String) -> bool:
 	if player.gem_link != null and player.gem_link.skill_gem != null:
 		if player.gem_link.skill_gem.id == id:
 			return true
-	for i in range(Constants.MAX_SKILL_GEM_INVENTORY):
-		var gem := player.get_skill_gem_in_inventory(i)
-		if gem != null and gem.id == id:
-			return true
-	return false
+	return _inventory_has_gem_id(id, Constants.MAX_SKILL_GEM_INVENTORY, Callable(player, "get_skill_gem_in_inventory"))
 
 
 func _player_has_support_gem_id(id: String) -> bool:
 	if player == null:
 		return false
-	for i in range(Constants.MAX_SUPPORT_GEM_INVENTORY):
-		var gem := player.get_support_gem_in_inventory(i)
+	return _inventory_has_gem_id(id, Constants.MAX_SUPPORT_GEM_INVENTORY, Callable(player, "get_support_gem_in_inventory"))
+
+
+func _inventory_has_gem_id(id: String, max_count: int, getter: Callable) -> bool:
+	for i in range(max_count):
+		var gem = getter.call(i)
 		if gem != null and gem.id == id:
 			return true
 	return false
@@ -342,7 +329,10 @@ func _update_progression_hud() -> void:
 
 
 func _on_damage_dealt(source: Node, target: Node, damage_info: Dictionary) -> void:
-	var pos: Vector2 = damage_info.get("position", target.global_position + Vector2(0, -20))
+	var fallback_pos := Vector2.ZERO
+	if target is Node2D:
+		fallback_pos = (target as Node2D).global_position + Vector2(0, -20)
+	var pos: Vector2 = damage_info.get("position", fallback_pos)
 	var element: StatTypes.Element = damage_info.get("element", StatTypes.Element.PHYSICAL)
 	var final_damage: float = float(damage_info.get("final_damage", damage_info.get("damage", 0.0)))
 
@@ -352,11 +342,7 @@ func _on_damage_dealt(source: Node, target: Node, damage_info: Dictionary) -> vo
 		if dmg_num == null:
 			return
 		dmg_num.global_position = pos
-		dmg_num.setup(
-			damage_info.get("damage", damage_info.get("final_damage", 0)),
-			damage_info.get("is_crit", false),
-			element
-		)
+		dmg_num.setup(final_damage, damage_info.get("is_crit", false), element)
 		add_child(dmg_num)
 
 	var effect: HitEffect = HIT_EFFECT_SCENE.instantiate()
@@ -879,59 +865,19 @@ func _wait_for_run_summary(title: String, body: String) -> void:
 
 
 func _toggle_equipment_panel() -> void:
-	if equipment_panel == null:
-		return
-
-	if equipment_panel.visible:
-		equipment_panel.close()
-	else:
-		equipment_panel.open(player)
-
-
-func _on_equipment_panel_closed() -> void:
-	pass
+	_toggle_panel("equipment")
 
 
 func _toggle_skill_link_panel() -> void:
-	if skill_link_panel == null:
-		return
-
-	if skill_link_panel.visible:
-		skill_link_panel.close()
-	else:
-		skill_link_panel.open(player)
-
-
-func _on_skill_link_panel_closed() -> void:
-	pass
+	_toggle_panel("skill")
 
 
 func _toggle_crafting_panel() -> void:
-	if crafting_panel == null:
-		return
-
-	if crafting_panel.visible:
-		crafting_panel.close()
-	else:
-		crafting_panel.open(player, current_floor)
-
-
-func _on_crafting_panel_closed() -> void:
-	pass
+	_toggle_panel("crafting")
 
 
 func _toggle_module_panel() -> void:
-	if module_panel == null:
-		return
-
-	if module_panel.visible:
-		module_panel.close()
-	else:
-		module_panel.open(player)
-
-
-func _on_module_panel_closed() -> void:
-	pass
+	_toggle_panel("module")
 
 
 func _pickup_all_items() -> void:
@@ -947,6 +893,26 @@ func _pickup_all_items() -> void:
 
 func _on_panel_navigate(panel_id: String) -> void:
 	_close_all_panels()
+	_open_panel(panel_id)
+
+
+func _close_all_panels() -> void:
+	for panel in [equipment_panel, skill_link_panel, crafting_panel, module_panel]:
+		if panel and panel.visible and panel.has_method("close"):
+			panel.call("close")
+
+
+func _toggle_panel(panel_id: String) -> void:
+	var panel := _panel_by_id(panel_id)
+	if panel == null:
+		return
+	if panel.visible:
+		panel.call("close")
+	else:
+		_open_panel(panel_id)
+
+
+func _open_panel(panel_id: String) -> void:
 	match panel_id:
 		"equipment":
 			if equipment_panel:
@@ -962,12 +928,14 @@ func _on_panel_navigate(panel_id: String) -> void:
 				module_panel.open(player)
 
 
-func _close_all_panels() -> void:
-	if equipment_panel and equipment_panel.visible:
-		equipment_panel.close()
-	if skill_link_panel and skill_link_panel.visible:
-		skill_link_panel.close()
-	if crafting_panel and crafting_panel.visible:
-		crafting_panel.close()
-	if module_panel and module_panel.visible:
-		module_panel.close()
+func _panel_by_id(panel_id: String) -> Control:
+	match panel_id:
+		"equipment":
+			return equipment_panel
+		"skill":
+			return skill_link_panel
+		"crafting":
+			return crafting_panel
+		"module":
+			return module_panel
+	return null

@@ -1,14 +1,14 @@
 extends Node
 
-# 資料快取
-var affix_data: Dictionary = {}        # id -> Affix 定義
-var equipment_bases: Dictionary = {}   # id -> 基底裝備定義
-var skill_gems: Dictionary = {}        # id -> SkillGem 定義
-var support_gems: Dictionary = {}      # id -> SupportGem 定義
-var enemy_data: Dictionary = {}        # id -> 敵人定義
-var floor_data: Dictionary = {}        # floor_number -> 層數配置
-var crafting_materials: Dictionary = {}  # id -> Crafting Material 定義
-var modules: Dictionary = {}            # id -> Module 定義
+# Cached data maps.
+var affix_data: Dictionary = {}        # id -> affix definition
+var equipment_bases: Dictionary = {}   # id -> equipment base definition
+var skill_gems: Dictionary = {}        # id -> skill gem definition
+var support_gems: Dictionary = {}      # id -> support gem definition
+var enemy_data: Dictionary = {}        # id -> enemy definition
+var floor_data: Dictionary = {}        # floor_number -> floor config
+var crafting_materials: Dictionary = {}  # id -> crafting material definition
+var modules: Dictionary = {}            # id -> module definition
 
 var _is_loaded: bool = false
 
@@ -129,7 +129,7 @@ func _parse_affix_data(id: String, data: Dictionary, affix_type: StatTypes.Affix
 	}
 
 
-# ===== 查詢方法 =====
+# ===== Queries =====
 
 func get_affix(id: String) -> Dictionary:
 	return affix_data.get(id, {})
@@ -164,35 +164,19 @@ func get_support_gem_data(id: String) -> Dictionary:
 
 
 func get_starter_skill_gem_ids() -> Array[String]:
-	var result: Array[String] = []
-	for id in skill_gems.keys():
-		var data: Dictionary = skill_gems[id]
-		if data.get("is_starter", false):
-			result.append(id)
-	return result
+	return _collect_starter_ids(skill_gems)
 
 
 func get_starter_support_gem_ids() -> Array[String]:
-	var result: Array[String] = []
-	for id in support_gems.keys():
-		var data: Dictionary = support_gems[id]
-		if data.get("is_starter", false):
-			result.append(id)
-	return result
+	return _collect_starter_ids(support_gems)
 
 
 func get_all_skill_gem_ids() -> Array[String]:
-	var result: Array[String] = []
-	for id in skill_gems.keys():
-		result.append(id)
-	return result
+	return _collect_ids(skill_gems)
 
 
 func get_all_support_gem_ids() -> Array[String]:
-	var result: Array[String] = []
-	for id in support_gems.keys():
-		result.append(id)
-	return result
+	return _collect_ids(support_gems)
 
 
 func create_skill_gem(id: String) -> SkillGem:
@@ -238,20 +222,21 @@ func create_support_gem(id: String) -> SupportGem:
 
 func _parse_weapon_restrictions(list: Array) -> Array[StatTypes.WeaponType]:
 	var result: Array[StatTypes.WeaponType] = []
-	for value in list:
-		var weapon: int = _weapon_type_from_string(str(value))
-		if weapon != -1:
-			result.append(weapon)
+	_append_parsed_enum_values(result, list, Callable(self, "_weapon_type_from_string"))
 	return result
 
 
 func _parse_skill_tags(list: Array) -> Array[StatTypes.SkillTag]:
 	var result: Array[StatTypes.SkillTag] = []
-	for value in list:
-		var tag: int = _skill_tag_from_string(str(value))
-		if tag != -1:
-			result.append(tag)
+	_append_parsed_enum_values(result, list, Callable(self, "_skill_tag_from_string"))
 	return result
+
+
+func _append_parsed_enum_values(result: Array, values: Array, parser: Callable) -> void:
+	for value in values:
+		var parsed: int = int(parser.call(str(value)))
+		if parsed != -1:
+			result.append(parsed)
 
 
 func _weapon_type_from_string(value: String) -> int:
@@ -293,52 +278,65 @@ func get_floor_config(floor_number: int) -> Dictionary:
 	var target_floor := maxi(1, floor_number)
 	var default_cfg: Dictionary = floor_data.get("default", {})
 	var result: Dictionary = default_cfg.duplicate(true)
+	var anchor := _resolve_floor_anchor(target_floor)
+	var anchor_floor: int = int(anchor.get("floor", 0))
+	var anchor_cfg: Dictionary = anchor.get("config", {})
 
-	# 找到不大於目標樓層的最近錨點設定（1/5/10/15...）
+	_apply_floor_overrides(result, anchor_cfg)
+	_apply_floor_scaling(result, maxi(0, target_floor - anchor_floor))
+	_remove_boss_from_non_anchor_floor(result, target_floor, anchor_floor)
+
+	return result
+
+
+func _resolve_floor_anchor(target_floor: int) -> Dictionary:
 	var anchor_floor := 0
 	var anchor_cfg: Dictionary = {}
 	for key in floor_data.keys():
 		var key_str := str(key)
 		if key_str == "default" or not key_str.is_valid_int():
 			continue
-		var n := int(key_str)
-		if n <= target_floor and n >= anchor_floor:
-			anchor_floor = n
-			anchor_cfg = floor_data[key_str]
+		var floor := int(key_str)
+		if floor <= target_floor and floor >= anchor_floor:
+			anchor_floor = floor
+			var cfg: Variant = floor_data[key_str]
+			anchor_cfg = cfg if cfg is Dictionary else {}
+	return {
+		"floor": anchor_floor,
+		"config": anchor_cfg,
+	}
 
-	# 先套用錨點設定（覆蓋 default）
-	for k in anchor_cfg.keys():
-		result[k] = anchor_cfg[k]
 
-	# 錨點之間的每層成長
-	var delta := maxi(0, target_floor - anchor_floor)
-	if delta > 0:
-		var hp_mult := float(result.get("enemy_hp_multiplier", 1.0))
-		var atk_mult := float(result.get("enemy_atk_multiplier", 1.0))
-		var exp_mult := float(result.get("experience_multiplier", 1.0))
-		var drop_mult := float(result.get("drop_rate_multiplier", 1.0))
-		var enemy_count := int(result.get("enemy_count", 10))
+func _apply_floor_overrides(result: Dictionary, overrides: Dictionary) -> void:
+	for k in overrides.keys():
+		result[k] = overrides[k]
 
-		# 難度主軸：血量、攻擊與怪數都會逐層上升
-		hp_mult = minf(hp_mult * pow(1.045, delta), 30.0)
-		atk_mult = minf(atk_mult * pow(1.03, delta), 20.0)
-		enemy_count = clampi(enemy_count + int(delta / 2), 6, 48)
 
-		# 配套倍率（避免後期收益過低）
-		exp_mult = minf(exp_mult * pow(1.02, delta), 10.0)
-		drop_mult = minf(drop_mult * pow(1.01, delta), 3.0)
+func _apply_floor_scaling(result: Dictionary, delta: int) -> void:
+	if delta <= 0:
+		return
+	var hp_mult := float(result.get("enemy_hp_multiplier", 1.0))
+	var atk_mult := float(result.get("enemy_atk_multiplier", 1.0))
+	var exp_mult := float(result.get("experience_multiplier", 1.0))
+	var drop_mult := float(result.get("drop_rate_multiplier", 1.0))
+	var enemy_count := int(result.get("enemy_count", 10))
 
-		result["enemy_hp_multiplier"] = hp_mult
-		result["enemy_atk_multiplier"] = atk_mult
-		result["enemy_count"] = enemy_count
-		result["experience_multiplier"] = exp_mult
-		result["drop_rate_multiplier"] = drop_mult
+	hp_mult = minf(hp_mult * pow(1.045, delta), 30.0)
+	atk_mult = minf(atk_mult * pow(1.03, delta), 20.0)
+	enemy_count = clampi(enemy_count + int(delta / 2), 6, 48)
+	exp_mult = minf(exp_mult * pow(1.02, delta), 10.0)
+	drop_mult = minf(drop_mult * pow(1.01, delta), 3.0)
 
-	# boss 只在明確定義的樓層出現，避免錨點外溢
-	if str(target_floor) != str(anchor_floor):
+	result["enemy_hp_multiplier"] = hp_mult
+	result["enemy_atk_multiplier"] = atk_mult
+	result["enemy_count"] = enemy_count
+	result["experience_multiplier"] = exp_mult
+	result["drop_rate_multiplier"] = drop_mult
+
+
+func _remove_boss_from_non_anchor_floor(result: Dictionary, target_floor: int, anchor_floor: int) -> void:
+	if target_floor != anchor_floor:
 		result.erase("boss")
-
-	return result
 
 
 func get_crafting_material(id: String) -> Dictionary:
@@ -346,10 +344,7 @@ func get_crafting_material(id: String) -> Dictionary:
 
 
 func get_all_material_ids() -> Array[String]:
-	var result: Array[String] = []
-	for id in crafting_materials.keys():
-		result.append(id)
-	return result
+	return _collect_ids(crafting_materials)
 
 
 func get_module_data(id: String) -> Dictionary:
@@ -357,17 +352,26 @@ func get_module_data(id: String) -> Dictionary:
 
 
 func get_all_module_ids() -> Array[String]:
-	var result: Array[String] = []
-	for id in modules.keys():
-		result.append(id)
-	return result
+	return _collect_ids(modules)
 
 
 func get_starter_module_ids() -> Array[String]:
+	return _collect_starter_ids(modules)
+
+
+func _collect_ids(dataset: Dictionary) -> Array[String]:
 	var result: Array[String] = []
-	for id in modules.keys():
-		if modules[id].get("is_starter", false):
-			result.append(id)
+	for id in dataset.keys():
+		result.append(str(id))
+	return result
+
+
+func _collect_starter_ids(dataset: Dictionary) -> Array[String]:
+	var result: Array[String] = []
+	for id in dataset.keys():
+		var entry: Variant = dataset[id]
+		if entry is Dictionary and entry.get("is_starter", false):
+			result.append(str(id))
 	return result
 
 
@@ -466,3 +470,4 @@ func _slot_to_string(slot: StatTypes.EquipmentSlot) -> String:
 		StatTypes.EquipmentSlot.RING_1: return "ring_1"
 		StatTypes.EquipmentSlot.RING_2: return "ring_2"
 		_: return "unknown"
+

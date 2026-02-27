@@ -1,4 +1,4 @@
-﻿# abyssal-walker
+# abyssal-walker
 
 [English](README.md) | [蝜?銝剜?](README.zh-TW.md)
 
@@ -70,4 +70,3 @@
 ## Changelog
 
 See `CHANGELOG.md`.
-

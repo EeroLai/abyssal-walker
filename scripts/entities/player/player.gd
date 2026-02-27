@@ -25,7 +25,7 @@ var stats: StatContainer
 var gem_link: GemLink
 var status_controller: StatusController
 var equipment: Dictionary = {}  # EquipmentSlot -> EquipmentData
-var inventory: Array[EquipmentData] = []  # 背包
+var inventory: Array[EquipmentData] = []  # backpack
 var skill_gem_inventory: Array[SkillGem] = []
 var support_gem_inventory: Array[SupportGem] = []
 var materials: Dictionary = {}  # material_id -> count
@@ -40,7 +40,6 @@ const MAX_MODULE_INVENTORY: int = Constants.MAX_MODULE_INVENTORY
 var current_hp: float = 100.0
 var is_dead: bool = false
 
-# AI 相關
 var ai: PlayerAI
 var current_target: Node2D = null
 
@@ -51,7 +50,6 @@ func _ready() -> void:
 	_setup_ai()
 	_connect_signals()
 
-	# 初始化生命值
 	current_hp = stats.get_stat(StatTypes.Stat.HP)
 	_emit_health_changed()
 
@@ -62,7 +60,6 @@ func _initialize_stats() -> void:
 
 	core_board = CoreBoard.new()
 
-	# 狀態控制器
 	status_controller = StatusController.new()
 	add_child(status_controller)
 
@@ -89,7 +86,6 @@ func _physics_process(delta: float) -> void:
 	if is_dead:
 		return
 
-	# 生命回復
 	var life_regen := stats.get_stat(StatTypes.Stat.LIFE_REGEN)
 	if life_regen > 0.0:
 		var max_hp := stats.get_stat(StatTypes.Stat.HP)
@@ -103,20 +99,17 @@ func _physics_process(delta: float) -> void:
 		_apply_virtual_walls()
 		return
 
-	# AI 控制移動
 	if ai:
 		velocity = ai.get_movement_velocity()
 
 	move_and_slide()
 	_apply_virtual_walls()
 
-	# 更新朝向
 	if velocity.x != 0:
 		sprite.flip_h = velocity.x < 0
 
 
 func _apply_virtual_walls() -> void:
-	# 有跟隨相機時不需要螢幕虛擬牆，避免把角色鎖在原點附近。
 	if get_viewport().get_camera_2d() != null:
 		return
 	var view_size := get_viewport_rect().size
@@ -141,19 +134,16 @@ func get_attack_range() -> float:
 	return 50.0
 
 
-# ===== 裝備系統 =====
 
 func equip(item: EquipmentData) -> EquipmentData:
 	var slot := _resolve_equip_slot(item)
 	item.slot = slot
 	var old_item: EquipmentData = null
 
-	# 移除舊裝備的屬性
 	if equipment.has(slot):
 		old_item = equipment[slot]
 		old_item.remove_from_stats(stats)
 
-	# 裝備新物品
 	equipment[slot] = item
 	item.apply_to_stats(stats)
 
@@ -199,7 +189,6 @@ func get_weapon_type() -> StatTypes.WeaponType:
 	return StatTypes.WeaponType.SWORD
 
 
-# ===== 背包系統 =====
 
 func add_to_inventory(item: EquipmentData) -> bool:
 	if inventory.size() >= MAX_INVENTORY_SIZE:
@@ -236,7 +225,6 @@ func equip_from_inventory(index: int) -> void:
 		add_to_inventory(old_item)
 
 
-# ===== 材料系統 =====
 
 func add_material(id: String, amount: int = 1) -> void:
 	if amount <= 0:
@@ -265,21 +253,13 @@ func get_material_count(id: String) -> int:
 	return int(materials.get(id, 0))
 
 
-# ===== 寶石背包系統 =====
 
 func add_skill_gem_to_inventory(gem: SkillGem) -> bool:
 	if gem == null:
 		return false
 	if _try_merge_skill_gem(gem):
 		return true
-	for i in range(MAX_SKILL_GEM_INVENTORY):
-		if i >= skill_gem_inventory.size():
-			skill_gem_inventory.append(gem)
-			return true
-		if skill_gem_inventory[i] == null:
-			skill_gem_inventory[i] = gem
-			return true
-	return false
+	return _store_in_first_free_slot(skill_gem_inventory, MAX_SKILL_GEM_INVENTORY, gem)
 
 
 func add_support_gem_to_inventory(gem: SupportGem) -> bool:
@@ -287,44 +267,23 @@ func add_support_gem_to_inventory(gem: SupportGem) -> bool:
 		return false
 	if _try_merge_support_gem(gem):
 		return true
-	for i in range(MAX_SUPPORT_GEM_INVENTORY):
-		if i >= support_gem_inventory.size():
-			support_gem_inventory.append(gem)
-			return true
-		if support_gem_inventory[i] == null:
-			support_gem_inventory[i] = gem
-			return true
-	return false
+	return _store_in_first_free_slot(support_gem_inventory, MAX_SUPPORT_GEM_INVENTORY, gem)
 
 
 func remove_skill_gem_from_inventory(index: int) -> SkillGem:
-	if index < 0 or index >= skill_gem_inventory.size():
-		return null
-	var gem: SkillGem = skill_gem_inventory[index]
-	skill_gem_inventory[index] = null
-	_compact_skill_gem_inventory()
-	return gem
+	return _remove_slot_item(skill_gem_inventory, index, true) as SkillGem
 
 
 func remove_support_gem_from_inventory(index: int) -> SupportGem:
-	if index < 0 or index >= support_gem_inventory.size():
-		return null
-	var gem: SupportGem = support_gem_inventory[index]
-	support_gem_inventory[index] = null
-	_compact_support_gem_inventory()
-	return gem
+	return _remove_slot_item(support_gem_inventory, index, true) as SupportGem
 
 
 func get_skill_gem_in_inventory(index: int) -> SkillGem:
-	if index < 0 or index >= skill_gem_inventory.size():
-		return null
-	return skill_gem_inventory[index]
+	return _get_slot_item(skill_gem_inventory, index) as SkillGem
 
 
 func get_support_gem_in_inventory(index: int) -> SupportGem:
-	if index < 0 or index >= support_gem_inventory.size():
-		return null
-	return support_gem_inventory[index]
+	return _get_slot_item(support_gem_inventory, index) as SupportGem
 
 
 func equip_skill_from_inventory(index: int) -> bool:
@@ -336,7 +295,6 @@ func equip_skill_from_inventory(index: int) -> bool:
 
 	var old := gem_link.skill_gem
 	if old:
-		# 有舊技能時直接和被點擊欄位交換，避免看起來被覆蓋/消失。
 		_set_skill_gem_in_inventory(index, old)
 	else:
 		_set_skill_gem_in_inventory(index, null)
@@ -370,7 +328,6 @@ func unequip_support_to_inventory(index: int) -> bool:
 	if gem == null:
 		return false
 	if not _store_support_gem_without_merge(gem):
-		# 背包滿了就放回原位
 		gem_link.set_support_gem(index, gem)
 		return false
 	return true
@@ -391,19 +348,11 @@ func set_support_gem_in_inventory(index: int, gem: SupportGem) -> bool:
 
 
 func swap_skill_gem_inventory(index_a: int, index_b: int) -> void:
-	_ensure_skill_gem_size(index_a)
-	_ensure_skill_gem_size(index_b)
-	var temp: SkillGem = skill_gem_inventory[index_a]
-	skill_gem_inventory[index_a] = skill_gem_inventory[index_b]
-	skill_gem_inventory[index_b] = temp
+	_swap_slots(skill_gem_inventory, index_a, index_b)
 
 
 func swap_support_gem_inventory(index_a: int, index_b: int) -> void:
-	_ensure_support_gem_size(index_a)
-	_ensure_support_gem_size(index_b)
-	var temp: SupportGem = support_gem_inventory[index_a]
-	support_gem_inventory[index_a] = support_gem_inventory[index_b]
-	support_gem_inventory[index_b] = temp
+	_swap_slots(support_gem_inventory, index_a, index_b)
 
 
 func swap_skill_with_inventory(index: int) -> bool:
@@ -440,65 +389,35 @@ func swap_support_with_inventory(slot_index: int, inv_index: int) -> bool:
 
 
 func _set_skill_gem_in_inventory(index: int, gem: SkillGem) -> void:
-	_ensure_skill_gem_size(index)
-	skill_gem_inventory[index] = gem
+	_set_slot_item(skill_gem_inventory, index, gem)
 
 
 func _set_support_gem_in_inventory(index: int, gem: SupportGem) -> void:
-	_ensure_support_gem_size(index)
-	support_gem_inventory[index] = gem
+	_set_slot_item(support_gem_inventory, index, gem)
 
 
 func _ensure_skill_gem_size(index: int) -> void:
-	while skill_gem_inventory.size() <= index:
-		skill_gem_inventory.append(null)
+	_ensure_slot_size(skill_gem_inventory, index)
 
 
 func _ensure_support_gem_size(index: int) -> void:
-	while support_gem_inventory.size() <= index:
-		support_gem_inventory.append(null)
+	_ensure_slot_size(support_gem_inventory, index)
 
 
 func _compact_skill_gem_inventory() -> void:
-	var packed: Array[SkillGem] = []
-	for gem in skill_gem_inventory:
-		if gem != null:
-			packed.append(gem)
-	skill_gem_inventory = packed
+	_compact_slots(skill_gem_inventory)
 
 
 func _compact_support_gem_inventory() -> void:
-	var packed: Array[SupportGem] = []
-	for gem in support_gem_inventory:
-		if gem != null:
-			packed.append(gem)
-	support_gem_inventory = packed
+	_compact_slots(support_gem_inventory)
 
 
 func _store_skill_gem_without_merge(gem: SkillGem) -> bool:
-	if gem == null:
-		return false
-	for i in range(MAX_SKILL_GEM_INVENTORY):
-		if i >= skill_gem_inventory.size():
-			skill_gem_inventory.append(gem)
-			return true
-		if skill_gem_inventory[i] == null:
-			skill_gem_inventory[i] = gem
-			return true
-	return false
+	return _store_in_first_free_slot(skill_gem_inventory, MAX_SKILL_GEM_INVENTORY, gem)
 
 
 func _store_support_gem_without_merge(gem: SupportGem) -> bool:
-	if gem == null:
-		return false
-	for i in range(MAX_SUPPORT_GEM_INVENTORY):
-		if i >= support_gem_inventory.size():
-			support_gem_inventory.append(gem)
-			return true
-		if support_gem_inventory[i] == null:
-			support_gem_inventory[i] = gem
-			return true
-	return false
+	return _store_in_first_free_slot(support_gem_inventory, MAX_SUPPORT_GEM_INVENTORY, gem)
 
 
 func _try_merge_skill_gem(incoming: SkillGem) -> bool:
@@ -530,26 +449,88 @@ func _try_merge_support_gem(incoming: SupportGem) -> bool:
 
 
 func _can_merge_same_level_skill(a: SkillGem, b: SkillGem) -> bool:
-	return a.id == b.id and a.level == b.level and a.level < Constants.MAX_GEM_LEVEL
+	return _can_merge_same_level_gem(a, b)
 
 
 func _can_merge_same_level_support(a: SupportGem, b: SupportGem) -> bool:
-	return a.id == b.id and a.level == b.level and a.level < Constants.MAX_GEM_LEVEL
+	return _can_merge_same_level_gem(a, b)
 
 
 func _merge_skill_pair(target_gem: SkillGem) -> void:
-	target_gem.level = mini(target_gem.level + 1, Constants.MAX_GEM_LEVEL)
-	target_gem.experience = 0.0
-	EventBus.gem_leveled_up.emit(target_gem, target_gem.level)
+	_merge_gem_pair(target_gem)
 
 
 func _merge_support_pair(target_gem: SupportGem) -> void:
+	_merge_gem_pair(target_gem)
+
+
+func _store_in_first_free_slot(storage: Array, max_count: int, item: Variant) -> bool:
+	if item == null:
+		return false
+	for i in range(max_count):
+		if i >= storage.size():
+			storage.append(item)
+			return true
+		if storage[i] == null:
+			storage[i] = item
+			return true
+	return false
+
+
+func _remove_slot_item(storage: Array, index: int, compact: bool = false) -> Variant:
+	if index < 0 or index >= storage.size():
+		return null
+	var item = storage[index]
+	storage[index] = null
+	if compact:
+		_compact_slots(storage)
+	return item
+
+
+func _get_slot_item(storage: Array, index: int) -> Variant:
+	if index < 0 or index >= storage.size():
+		return null
+	return storage[index]
+
+
+func _set_slot_item(storage: Array, index: int, item: Variant) -> void:
+	_ensure_slot_size(storage, index)
+	storage[index] = item
+
+
+func _ensure_slot_size(storage: Array, index: int) -> void:
+	while storage.size() <= index:
+		storage.append(null)
+
+
+func _compact_slots(storage: Array) -> void:
+	for i in range(storage.size() - 1, -1, -1):
+		if storage[i] == null:
+			storage.remove_at(i)
+
+
+func _swap_slots(storage: Array, index_a: int, index_b: int) -> void:
+	_ensure_slot_size(storage, index_a)
+	_ensure_slot_size(storage, index_b)
+	var temp = storage[index_a]
+	storage[index_a] = storage[index_b]
+	storage[index_b] = temp
+
+
+func _can_merge_same_level_gem(a: Resource, b: Resource) -> bool:
+	if a == null or b == null:
+		return false
+	return a.id == b.id and a.level == b.level and a.level < Constants.MAX_GEM_LEVEL
+
+
+func _merge_gem_pair(target_gem: Resource) -> void:
+	if target_gem == null:
+		return
 	target_gem.level = mini(target_gem.level + 1, Constants.MAX_GEM_LEVEL)
 	target_gem.experience = 0.0
 	EventBus.gem_leveled_up.emit(target_gem, target_gem.level)
 
 
-# ===== 戰鬥系統 =====
 
 func start_auto_attack() -> void:
 	if attack_timer.is_stopped():
@@ -572,39 +553,55 @@ func _perform_attack() -> void:
 	if not gem_link.is_valid():
 		return
 
-	var skill := gem_link.skill_gem
-	if skill == null:
-		return
-
-	if not skill.can_use_with_weapon(get_weapon_type()):
-		return
-
-	if current_target == null or not is_instance_valid(current_target):
+	var skill: SkillGem = gem_link.skill_gem
+	if not _can_attack_with_skill(skill):
 		return
 
 	_try_shadow_strike_reposition()
 
 	var support_mods := gem_link.get_combined_modifiers()
 	var skill_mult := gem_link.get_final_damage_multiplier()
+	if _is_ranged_skill(skill):
+		_execute_ranged_attack(skill, skill_mult, support_mods)
+		return
+	_execute_melee_attack(skill, skill_mult, support_mods)
 
-	var is_ranged := (skill.has_tag(StatTypes.SkillTag.RANGED)
-		or skill.has_tag(StatTypes.SkillTag.PROJECTILE))
 
-	if is_ranged:
-		if skill.id == "arrow_rain":
-			_apply_arrow_rain(skill_mult, support_mods)
-			return
-		var ranged_damage := DamageCalculator.calculate_attack_damage(stats, skill_mult, support_mods, skill)
-		if skill.id == "arc_lightning":
-			_cast_arc_lightning(ranged_damage, support_mods)
-			return
-		_launch_projectile(ranged_damage, support_mods)
-	else:
-		if skill.hit_count > 1:
-			_apply_flurry_hit(skill_mult, support_mods)
-			return
-		var melee_damage := DamageCalculator.calculate_attack_damage(stats, skill_mult, support_mods, skill)
-		_apply_melee_hit(melee_damage, support_mods)
+func _can_attack_with_skill(skill: SkillGem) -> bool:
+	if skill == null:
+		return false
+	if not skill.can_use_with_weapon(get_weapon_type()):
+		return false
+	return _get_current_target_node2d() != null
+
+
+func _get_current_target_node2d() -> Node2D:
+	if current_target == null or not is_instance_valid(current_target):
+		return null
+	return current_target as Node2D
+
+
+func _is_ranged_skill(skill: SkillGem) -> bool:
+	return skill.has_tag(StatTypes.SkillTag.RANGED) or skill.has_tag(StatTypes.SkillTag.PROJECTILE)
+
+
+func _execute_ranged_attack(skill: SkillGem, skill_mult: float, support_mods: Dictionary) -> void:
+	if skill.id == "arrow_rain":
+		_apply_arrow_rain(skill_mult, support_mods)
+		return
+	var ranged_damage := DamageCalculator.calculate_attack_damage(stats, skill_mult, support_mods, skill)
+	if skill.id == "arc_lightning":
+		_cast_arc_lightning(ranged_damage, support_mods)
+		return
+	_launch_projectile(ranged_damage, support_mods)
+
+
+func _execute_melee_attack(skill: SkillGem, skill_mult: float, support_mods: Dictionary) -> void:
+	if skill.hit_count > 1:
+		_apply_flurry_hit(skill_mult, support_mods)
+		return
+	var melee_damage := DamageCalculator.calculate_attack_damage(stats, skill_mult, support_mods, skill)
+	_apply_melee_hit(melee_damage, support_mods)
 
 
 func _try_shadow_strike_reposition() -> void:
@@ -612,12 +609,9 @@ func _try_shadow_strike_reposition() -> void:
 		return
 	if gem_link.skill_gem.id != "shadow_strike":
 		return
-	if current_target == null or not is_instance_valid(current_target):
+	var target_node := _get_current_target_node2d()
+	if target_node == null:
 		return
-	if not (current_target is Node2D):
-		return
-
-	var target_node := current_target as Node2D
 	var to_target := (target_node.global_position - global_position).normalized()
 	if to_target == Vector2.ZERO:
 		to_target = Vector2.RIGHT
@@ -627,7 +621,6 @@ func _try_shadow_strike_reposition() -> void:
 		global_position = desired
 		return
 
-	# 找不到理想背後點時，嘗試背後附近數個偏移角。
 	var angle_offsets := [20.0, -20.0, 40.0, -40.0, 60.0, -60.0]
 	for angle_deg in angle_offsets:
 		var dir := to_target.rotated(deg_to_rad(angle_deg))
@@ -668,10 +661,7 @@ func _apply_melee_hit(
 
 	var targets := _get_melee_targets(support_mods)
 	for target in targets:
-		if target != null and is_instance_valid(target) and target.has_method("take_damage"):
-			target.take_damage(damage_result, self)
-			_try_apply_status_on_hit(target, damage_result, support_mods)
-			_try_apply_knockback_on_hit(target, support_mods)
+		_apply_hit_to_target(target, damage_result, support_mods)
 
 
 func _apply_flurry_hit(skill_mult: float, support_mods: Dictionary) -> void:
@@ -689,9 +679,8 @@ func _apply_flurry_hit(skill_mult: float, support_mods: Dictionary) -> void:
 
 
 func _apply_arrow_rain(skill_mult: float, support_mods: Dictionary) -> void:
-	if current_target == null or not is_instance_valid(current_target):
-		return
-	if not (current_target is Node2D):
+	var target_node := _get_current_target_node2d()
+	if target_node == null:
 		return
 	var skill := gem_link.skill_gem
 	if skill == null:
@@ -703,29 +692,25 @@ func _apply_arrow_rain(skill_mult: float, support_mods: Dictionary) -> void:
 		rain_radius = 80.0
 	rain_radius *= area_multiplier
 
-	var center := (current_target as Node2D).global_position
+	var center := target_node.global_position
 	var arrow_count := maxi(1, skill.arrow_count)
 	_spawn_arrow_rain_effect(center, rain_radius, arrow_count)
 	var targets := _get_enemies_in_circle(center, rain_radius)
 	if targets.is_empty():
-		targets.append(current_target as Node2D)
+		targets.append(target_node)
 
 	for i in range(arrow_count):
 		var target: Node2D = targets[randi() % targets.size()]
-		if target == null or not is_instance_valid(target):
-			continue
 		var damage_result := DamageCalculator.calculate_attack_damage(stats, skill_mult, support_mods, skill)
-		if target.has_method("take_damage"):
-			target.take_damage(damage_result, self)
-			_try_apply_status_on_hit(target, damage_result, support_mods)
-			_try_apply_knockback_on_hit(target, support_mods)
+		_apply_hit_to_target(target, damage_result, support_mods)
 
 
 func _launch_projectile(
 	damage_result: DamageCalculator.DamageResult,
 	support_mods: Dictionary
 ) -> void:
-	if current_target == null or not is_instance_valid(current_target):
+	var target_node := _get_current_target_node2d()
+	if target_node == null:
 		return
 	var skill := gem_link.skill_gem
 	if skill == null:
@@ -733,8 +718,8 @@ func _launch_projectile(
 
 	var projectile_count := maxi(1, int(round(support_mods.get("projectile_count", 0.0))) + 1)
 	var spread_deg := 14.0 + maxf(float(projectile_count - 1), 0.0) * 3.0
-	var base_angle := (current_target.global_position - global_position).angle()
-	var is_tracking := gem_link.skill_gem.has_tag(StatTypes.SkillTag.TRACKING)
+	var base_angle := (target_node.global_position - global_position).angle()
+	var is_tracking := skill.has_tag(StatTypes.SkillTag.TRACKING)
 	var projectile_speed := skill.get_effective_projectile_speed()
 	var area_multiplier := maxf(float(support_mods.get("area_multiplier", 1.0)), 0.1)
 	var explosion_radius := skill.get_effective_explosion_radius() * area_multiplier
@@ -758,7 +743,7 @@ func _launch_projectile(
 
 		projectile.setup(
 			self,
-			current_target,
+			target_node,
 			damage_result,
 			support_mods,
 			is_tracking,
@@ -776,9 +761,8 @@ func _cast_arc_lightning(
 	damage_result: DamageCalculator.DamageResult,
 	support_mods: Dictionary
 ) -> void:
-	if current_target == null or not is_instance_valid(current_target):
-		return
-	if not (current_target is Node2D):
+	var start_target := _get_current_target_node2d()
+	if start_target == null:
 		return
 	var skill := gem_link.skill_gem
 	if skill == null:
@@ -787,7 +771,7 @@ func _cast_arc_lightning(
 	var max_chain := maxi(0, skill.chain_count + int(round(support_mods.get("chain_count", 0.0))))
 	var hit_targets: Dictionary = {}
 	var chain_targets: Array[Node2D] = []
-	var current_node := current_target as Node2D
+	var current_node := start_target
 	var hops := 0
 
 	while current_node != null and is_instance_valid(current_node):
@@ -815,28 +799,17 @@ func _cast_arc_lightning(
 		if target_node == null or not is_instance_valid(target_node):
 			continue
 		_spawn_arc_beam_effect(from_pos, target_node.global_position, color)
-		if target_node.has_method("take_damage"):
-			target_node.take_damage(result_to_apply, self)
-			_try_apply_status_on_hit(target_node, result_to_apply, support_mods)
-			_try_apply_knockback_on_hit(target_node, support_mods)
+		_apply_hit_to_target(target_node, result_to_apply, support_mods)
 		from_pos = target_node.global_position
 
 
 func _find_arc_chain_target(from_target: Node2D, hit_targets: Dictionary) -> Node2D:
-	var enemies := get_tree().get_nodes_in_group("enemies")
 	var best: Node2D = null
 	var best_dist_sq := INF
 	var max_dist_sq := ARC_CHAIN_SEARCH_RADIUS * ARC_CHAIN_SEARCH_RADIUS
 
-	for enemy in enemies:
-		if not (enemy is Node2D):
-			continue
-		var enemy_node := enemy as Node2D
-		if enemy_node == null or not is_instance_valid(enemy_node):
-			continue
+	for enemy_node in _get_alive_enemies():
 		if enemy_node == from_target:
-			continue
-		if enemy_node.has_method("is_dead") and enemy_node.is_dead():
 			continue
 		var key := str(enemy_node.get_instance_id())
 		if hit_targets.has(key):
@@ -890,11 +863,12 @@ func _spawn_melee_effect(
 	damage_result: DamageCalculator.DamageResult,
 	support_mods: Dictionary
 ) -> void:
-	if current_target == null or not is_instance_valid(current_target):
+	var target_node := _get_current_target_node2d()
+	if target_node == null:
 		return
 	var effect: MeleeEffect = MELEE_EFFECT_SCENE.instantiate()
 	effect.global_position = global_position
-	var angle := (current_target.global_position - global_position).angle()
+	var angle := (target_node.global_position - global_position).angle()
 	var area_multiplier := float(support_mods.get("area_multiplier", 1.0))
 	var skill := gem_link.skill_gem
 	var is_circle := skill != null and skill.id == "whirlwind"
@@ -904,15 +878,11 @@ func _spawn_melee_effect(
 	if is_aoe_melee:
 		effect_range *= maxf(area_multiplier, 0.1)
 	else:
-		# 單體近戰維持短距離視覺，避免看起來像範圍技。
-		effect_range = minf(effect_range, 55.0)
 		cone_angle_deg = 42.0
 		if skill != null and (skill.id == "flurry" or skill.id == "shadow_strike"):
 			effect_range = minf(effect_range, 42.0)
 			cone_angle_deg = 30.0
 		elif skill != null and skill.id == "stab":
-			# 刺擊視覺跟著實際攻擊距離，避免看起來打不到卻有傷害。
-			effect_range = get_attack_range()
 			cone_angle_deg = 34.0
 	var color: Color = StatTypes.ELEMENT_COLORS.get(
 		_get_primary_element(damage_result), Color.WHITE)
@@ -928,11 +898,9 @@ func _spawn_arrow_rain_effect(center: Vector2, radius: float, arrow_count: int) 
 
 
 func _get_melee_targets(support_mods: Dictionary) -> Array[Node2D]:
-	if current_target == null or not is_instance_valid(current_target):
+	var target_node := _get_current_target_node2d()
+	if target_node == null:
 		return []
-	if not (current_target is Node2D):
-		return []
-	var target_node := current_target as Node2D
 
 	if gem_link == null or gem_link.skill_gem == null:
 		if _is_target_in_melee_range(target_node, get_attack_range()):
@@ -943,7 +911,6 @@ func _get_melee_targets(support_mods: Dictionary) -> Array[Node2D]:
 	var area_multiplier := float(support_mods.get("area_multiplier", 1.0))
 	var radius := get_attack_range() * maxf(area_multiplier, 0.1)
 
-	# 暗影突襲固定單體。
 	if skill.id == "shadow_strike":
 		if _is_target_in_melee_range(target_node, get_attack_range()):
 			return _single_target_array(target_node)
@@ -954,7 +921,6 @@ func _get_melee_targets(support_mods: Dictionary) -> Array[Node2D]:
 			return _single_target_array(target_node)
 		return []
 
-	# 近戰 AOE：旋風斬為全圓，其餘 AOE 近戰預設前方扇形。
 	if skill.id == "whirlwind":
 		return _get_enemies_in_circle(global_position, radius)
 
@@ -978,19 +944,49 @@ func _single_target_array(target_node: Node2D) -> Array[Node2D]:
 	return result
 
 
+func _get_alive_enemies() -> Array[Node2D]:
+	var result: Array[Node2D] = []
+	for enemy in get_tree().get_nodes_in_group("enemies"):
+		if enemy is Node2D and _is_alive_enemy(enemy):
+			result.append(enemy as Node2D)
+	return result
+
+
+func _is_alive_enemy(enemy: Node) -> bool:
+	if enemy == null or not is_instance_valid(enemy):
+		return false
+	if enemy.has_method("is_dead") and enemy.is_dead():
+		return false
+	return true
+
+
+func _apply_hit_to_target(
+	target: Node,
+	damage_result: DamageCalculator.DamageResult,
+	support_mods: Dictionary
+) -> void:
+	if target == null or not is_instance_valid(target):
+		return
+	if not target.has_method("take_damage"):
+		return
+	target.take_damage(damage_result, self)
+	_apply_on_hit_effects(target, damage_result, support_mods)
+
+
+func _apply_on_hit_effects(
+	target: Node,
+	damage_result: DamageCalculator.DamageResult,
+	support_mods: Dictionary
+) -> void:
+	_try_apply_status_on_hit(target, damage_result, support_mods)
+	_try_apply_knockback_on_hit(target, support_mods)
+
+
 func _get_enemies_in_circle(center: Vector2, radius: float) -> Array[Node2D]:
 	var result: Array[Node2D] = []
-	var enemies := get_tree().get_nodes_in_group("enemies")
 	var radius_sq := radius * radius
 
-	for enemy in enemies:
-		if not (enemy is Node2D):
-			continue
-		var enemy_node := enemy as Node2D
-		if enemy_node == null or not is_instance_valid(enemy_node):
-			continue
-		if enemy_node.has_method("is_dead") and enemy_node.is_dead():
-			continue
+	for enemy_node in _get_alive_enemies():
 		if enemy_node.global_position.distance_squared_to(center) <= radius_sq:
 			result.append(enemy_node)
 
@@ -1004,20 +1000,11 @@ func _get_enemies_in_cone(
 	angle_deg: float
 ) -> Array[Node2D]:
 	var result: Array[Node2D] = []
-	var enemies := get_tree().get_nodes_in_group("enemies")
 	var radius_sq := radius * radius
 	var dir := forward.normalized()
 	var min_dot := cos(deg_to_rad(angle_deg * 0.5))
 
-	for enemy in enemies:
-		if not (enemy is Node2D):
-			continue
-		var enemy_node := enemy as Node2D
-		if enemy_node == null or not is_instance_valid(enemy_node):
-			continue
-		if enemy_node.has_method("is_dead") and enemy_node.is_dead():
-			continue
-
+	for enemy_node in _get_alive_enemies():
 		var to_enemy := enemy_node.global_position - center
 		if to_enemy.length_squared() > radius_sq:
 			continue
@@ -1034,8 +1021,7 @@ func on_projectile_hit(
 	damage_result: DamageCalculator.DamageResult,
 	support_mods: Dictionary
 ) -> void:
-	_try_apply_status_on_hit(target, damage_result, support_mods)
-	_try_apply_knockback_on_hit(target, support_mods)
+	_apply_on_hit_effects(target, damage_result, support_mods)
 
 
 func _get_primary_element(result: DamageCalculator.DamageResult) -> StatTypes.Element:
@@ -1058,23 +1044,14 @@ func _on_attack_timer_timeout() -> void:
 	_restart_attack_timer()
 
 
-# ===== 受傷與死亡 =====
 
 func take_damage(damage_result: DamageCalculator.DamageResult, attacker: Node) -> void:
 	if is_dead:
 		return
 
-	var final_damage := DamageCalculator.calculate_received_damage(stats, damage_result)
-	if status_controller:
-		final_damage *= status_controller.get_damage_taken_multiplier()
-	current_hp -= final_damage
-
-	_emit_health_changed()
-
-	# 生命竊取
-	var life_steal := stats.get_stat(StatTypes.Stat.LIFE_STEAL)
-	if life_steal > 0:
-		heal(final_damage * life_steal)
+	var final_damage := _calculate_final_received_damage(damage_result)
+	_apply_damage_to_health(final_damage)
+	_apply_life_steal_on_hit(final_damage)
 
 	if current_hp <= 0:
 		_die()
@@ -1103,15 +1080,12 @@ func apply_status_damage(amount: float, element: StatTypes.Element) -> void:
 	if is_dead:
 		return
 
-	# 直接扣血（持續傷害）
-	current_hp -= amount
-	_emit_health_changed()
+	_apply_damage_to_health(amount)
 
 	if current_hp <= 0:
 		_die()
 
-
-# ===== 拾取 =====
+# ===== Status And Signals =====
 
 func _on_pickup_area_entered(area: Area2D) -> void:
 	if area.has_method("pickup"):
@@ -1119,18 +1093,8 @@ func _on_pickup_area_entered(area: Area2D) -> void:
 
 
 func _on_stats_changed() -> void:
-	# 更新最大生命時，按比例調整當前生命
-	var max_hp := stats.get_stat(StatTypes.Stat.HP)
-	current_hp = minf(current_hp, max_hp)
-	_emit_health_changed()
-
-	# 更新拾取範圍
-	var range_bonus := stats.get_stat(StatTypes.Stat.PICKUP_RANGE)
-	var final_range := pickup_range * (1.0 + range_bonus)
-	if pickup_area and pickup_area.has_node("CollisionShape2D"):
-		var shape: CollisionShape2D = pickup_area.get_node("CollisionShape2D")
-		if shape.shape is CircleShape2D:
-			shape.shape.radius = final_range
+	_clamp_health_after_stats_changed()
+	_update_pickup_area_radius()
 
 
 func _try_apply_status_on_hit(
@@ -1140,26 +1104,101 @@ func _try_apply_status_on_hit(
 ) -> void:
 	if status_controller == null:
 		return
-	if target == null or not is_instance_valid(target):
-		return
-	if not target.has_method("get_status_controller"):
-		return
-
-	var target_status: StatusController = target.get_status_controller()
+	var target_status := _get_target_status_controller(target)
 	if target_status == null:
 		return
 
 	var support_bonus: float = support_mods.get("status_chance_bonus", 0.0)
 	var total: float = maxf(damage_result.total_damage, 1.0)
+	var rolls := _build_status_rolls(damage_result)
+	for roll in rolls:
+		_try_apply_status_roll(roll, support_bonus, total, target_status)
 
-	if damage_result.fire_damage > 0.0:
-		_try_apply("burn", Constants.BURN_BASE_CHANCE, StatTypes.Stat.BURN_CHANCE, support_bonus + _get_skill_status_bonus("burn"), damage_result.fire_damage, total, target_status)
-	if damage_result.ice_damage > 0.0:
-		_try_apply("freeze", Constants.FREEZE_BASE_CHANCE, StatTypes.Stat.FREEZE_CHANCE, support_bonus + _get_skill_status_bonus("freeze"), damage_result.ice_damage, total, target_status)
-	if damage_result.lightning_damage > 0.0:
-		_try_apply("shock", Constants.SHOCK_BASE_CHANCE, StatTypes.Stat.SHOCK_CHANCE, support_bonus + _get_skill_status_bonus("shock"), damage_result.lightning_damage, total, target_status)
-	if damage_result.physical_damage > 0.0:
-		_try_apply("bleed", Constants.BLEED_BASE_CHANCE, StatTypes.Stat.BLEED_CHANCE, support_bonus + _get_skill_status_bonus("bleed"), damage_result.physical_damage, total, target_status)
+
+func _calculate_final_received_damage(damage_result: DamageCalculator.DamageResult) -> float:
+	var final_damage := DamageCalculator.calculate_received_damage(stats, damage_result)
+	if status_controller:
+		final_damage *= status_controller.get_damage_taken_multiplier()
+	return final_damage
+
+
+func _apply_damage_to_health(amount: float) -> void:
+	current_hp -= amount
+	_emit_health_changed()
+
+
+func _apply_life_steal_on_hit(final_damage: float) -> void:
+	var life_steal := stats.get_stat(StatTypes.Stat.LIFE_STEAL)
+	if life_steal > 0.0:
+		heal(final_damage * life_steal)
+
+
+func _clamp_health_after_stats_changed() -> void:
+	var max_hp := stats.get_stat(StatTypes.Stat.HP)
+	current_hp = minf(current_hp, max_hp)
+	_emit_health_changed()
+
+
+func _update_pickup_area_radius() -> void:
+	var range_bonus := stats.get_stat(StatTypes.Stat.PICKUP_RANGE)
+	var final_range := pickup_range * (1.0 + range_bonus)
+	if pickup_area and pickup_area.has_node("CollisionShape2D"):
+		var shape: CollisionShape2D = pickup_area.get_node("CollisionShape2D")
+		if shape.shape is CircleShape2D:
+			shape.shape.radius = final_range
+
+
+func _get_target_status_controller(target: Node) -> StatusController:
+	if target == null or not is_instance_valid(target):
+		return null
+	if not target.has_method("get_status_controller"):
+		return null
+	return target.get_status_controller() as StatusController
+
+
+func _build_status_rolls(damage_result: DamageCalculator.DamageResult) -> Array[Dictionary]:
+	return [
+		{
+			"status_type": "burn",
+			"source_damage": damage_result.fire_damage,
+			"base_chance": Constants.BURN_BASE_CHANCE,
+			"stat_type": StatTypes.Stat.BURN_CHANCE,
+		},
+		{
+			"status_type": "freeze",
+			"source_damage": damage_result.ice_damage,
+			"base_chance": Constants.FREEZE_BASE_CHANCE,
+			"stat_type": StatTypes.Stat.FREEZE_CHANCE,
+		},
+		{
+			"status_type": "shock",
+			"source_damage": damage_result.lightning_damage,
+			"base_chance": Constants.SHOCK_BASE_CHANCE,
+			"stat_type": StatTypes.Stat.SHOCK_CHANCE,
+		},
+		{
+			"status_type": "bleed",
+			"source_damage": damage_result.physical_damage,
+			"base_chance": Constants.BLEED_BASE_CHANCE,
+			"stat_type": StatTypes.Stat.BLEED_CHANCE,
+		},
+	]
+
+
+func _try_apply_status_roll(
+	roll: Dictionary,
+	support_bonus: float,
+	total_damage: float,
+	target_status: StatusController
+) -> void:
+	var source_damage := float(roll.get("source_damage", 0.0))
+	if source_damage <= 0.0:
+		return
+	var status_type := str(roll.get("status_type", ""))
+	var base_chance := float(roll.get("base_chance", 0.0))
+	var stat_type: StatTypes.Stat = int(roll.get("stat_type", StatTypes.Stat.BURN_CHANCE))
+	var bonus := support_bonus + _get_skill_status_bonus(status_type)
+	_try_apply(status_type, base_chance, stat_type, bonus, source_damage, total_damage, target_status)
 
 
 func _try_apply(
@@ -1198,7 +1237,7 @@ func get_status_controller() -> StatusController:
 	return status_controller
 
 
-# ===== 重生 =====
+# ===== Respawn =====
 
 func respawn() -> void:
 	is_dead = false
@@ -1206,7 +1245,6 @@ func respawn() -> void:
 	_emit_health_changed()
 
 
-# ===== 模組系統 =====
 
 func add_module_to_inventory(module: Module) -> bool:
 	if module == null:

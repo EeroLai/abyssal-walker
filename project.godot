@@ -22,7 +22,6 @@ config/icon="res://icon.svg"
 EventBus="*res://scripts/autoload/event_bus.gd"
 DataManager="*res://scripts/autoload/data_manager.gd"
 GameManager="*res://scripts/autoload/game_manager.gd"
-SaveManager="*res://scripts/autoload/save_manager.gd"
 
 [debug]
 
