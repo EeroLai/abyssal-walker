@@ -10,7 +10,7 @@ This format is based on Keep a Changelog and uses simple sections:
 
 ## [Unreleased]
 
-## [2.1.0] - 2026-02-27
+## [2.0.1] - 2026-02-27
 
 ### Fixed
 - Fixed module load cost becoming `0` after extract -> lobby -> re-enter flow when operating module equip/unequip.
