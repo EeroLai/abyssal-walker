@@ -7,6 +7,8 @@ var skill_gems: Dictionary = {}        # id -> skill gem definition
 var support_gems: Dictionary = {}      # id -> support gem definition
 var enemy_data: Dictionary = {}        # id -> enemy definition
 var floor_data: Dictionary = {}        # floor_number -> floor config
+var beacon_modifiers: Dictionary = {}  # id -> abyss beacon modifier definition
+var beacon_templates: Dictionary = {}  # abyss beacon generation templates and pools
 var crafting_materials: Dictionary = {}  # id -> crafting material definition
 var modules: Dictionary = {}            # id -> module definition
 
@@ -29,6 +31,8 @@ func load_all_data() -> void:
 	_load_modules()
 	_load_enemy_data()
 	_load_floor_data()
+	_load_beacon_modifiers()
+	_load_beacon_templates()
 
 	_is_loaded = true
 	print("[DataManager] All data loaded.")
@@ -83,6 +87,16 @@ func _load_enemy_data() -> void:
 func _load_floor_data() -> void:
 	var path := "res://data/abyss/floors.json"
 	floor_data = _load_json(path)
+
+
+func _load_beacon_modifiers() -> void:
+	var path := "res://data/abyss/beacon_modifiers.json"
+	beacon_modifiers = _load_json(path)
+
+
+func _load_beacon_templates() -> void:
+	var path := "res://data/abyss/beacon_templates.json"
+	beacon_templates = _load_json(path)
 
 
 func _load_crafting_materials() -> void:
@@ -287,6 +301,30 @@ func get_floor_config(floor_number: int) -> Dictionary:
 	_remove_boss_from_non_anchor_floor(result, target_floor, anchor_floor)
 
 	return result
+
+
+func get_beacon_modifier_data(id: String) -> Dictionary:
+	return beacon_modifiers.get(id, {})
+
+
+func get_all_beacon_modifier_ids() -> Array[String]:
+	return _collect_ids(beacon_modifiers)
+
+
+func get_beacon_template_data(id: String) -> Dictionary:
+	var templates: Dictionary = beacon_templates.get("templates", {})
+	return templates.get(id, {})
+
+
+func get_beacon_template_pool(source_id: String) -> Array:
+	var pools: Dictionary = beacon_templates.get("source_pools", {})
+	var value: Variant = pools.get(source_id, [])
+	return value if value is Array else []
+
+
+func get_beacon_template_constraints() -> Dictionary:
+	var value: Variant = beacon_templates.get("constraints", {})
+	return value if value is Dictionary else {}
 
 
 func _resolve_floor_anchor(target_floor: int) -> Dictionary:

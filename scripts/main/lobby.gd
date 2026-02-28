@@ -136,13 +136,17 @@ func _refresh_all() -> void:
 
 func _refresh_beacon_inventory() -> void:
 	var inventory_snapshot: Array = GameManager.get_beacon_inventory_snapshot()
-	_beacon_entries = [_build_baseline_beacon_entry()]
+	_beacon_entries = []
+	if inventory_snapshot.is_empty():
+		_beacon_entries.append(_build_baseline_beacon_entry())
 	for i in range(inventory_snapshot.size()):
 		var beacon: Variant = inventory_snapshot[i]
 		_beacon_entries.append(_wrap_inventory_beacon_entry(beacon, i))
 	_clear_grid(beacon_grid, _beacon_slot_buttons)
 	if beacon_count_label != null:
-		beacon_count_label.text = "Owned Beacons: %d  |  Baseline Ready" % inventory_snapshot.size()
+		beacon_count_label.text = "Owned Beacons: %d" % inventory_snapshot.size()
+		if inventory_snapshot.is_empty():
+			beacon_count_label.text += "  |  Baseline Ready"
 	if _beacon_entries.is_empty():
 		_selected_beacon_index = -1
 		_selected_beacon = null
@@ -182,6 +186,7 @@ func _apply_selected_beacon(index: int) -> void:
 	_selected_beacon = AbyssBeaconData.new()
 	_selected_beacon.id = str(_beacon_value(raw_beacon, "id", ""))
 	_selected_beacon.display_name = str(_beacon_value(raw_beacon, "display_name", "Abyss Beacon"))
+	_selected_beacon.template_id = _beacon_template_id(raw_beacon)
 	_selected_beacon.base_difficulty = int(_beacon_value(raw_beacon, "base_difficulty", 1))
 	_selected_beacon.max_depth = int(_beacon_value(raw_beacon, "max_depth", 1))
 	_selected_beacon.lives_max = int(_beacon_value(raw_beacon, "lives_max", 1))
@@ -625,6 +630,7 @@ func _build_baseline_beacon_entry() -> Dictionary:
 	return {
 		"id": "baseline_loop",
 		"display_name": "Baseline Dive",
+		"template_id": "baseline",
 		"base_difficulty": 1,
 		"max_depth": 5,
 		"lives_max": 3,
@@ -638,6 +644,7 @@ func _wrap_inventory_beacon_entry(beacon: Variant, inventory_index: int) -> Dict
 	return {
 		"id": str(_beacon_value(beacon, "id", "")),
 		"display_name": str(_beacon_value(beacon, "display_name", "Abyss Beacon")),
+		"template_id": _beacon_template_id(beacon),
 		"base_difficulty": int(_beacon_value(beacon, "base_difficulty", 1)),
 		"max_depth": int(_beacon_value(beacon, "max_depth", 1)),
 		"lives_max": int(_beacon_value(beacon, "lives_max", 1)),
@@ -682,13 +689,15 @@ func _create_beacon_card_button(index: int) -> Button:
 
 func _configure_beacon_card(btn: Button, beacon: Variant, selected: bool) -> void:
 	var display_name := str(_beacon_value(beacon, "display_name", "Abyss Beacon"))
+	var tag_label := _beacon_template_label(beacon)
 	var level := int(_beacon_value(beacon, "base_difficulty", 1))
 	var depth := int(_beacon_value(beacon, "max_depth", 1))
 	var lives := int(_beacon_value(beacon, "lives_max", 1))
 	var modifier_summary := _beacon_card_modifier_summary(beacon)
 	btn.disabled = false
-	btn.text = "%s\nLv %d  Depth %d  Lives %d\n%s" % [
+	btn.text = "%s\n[%s]  Lv %d  Depth %d  Lives %d\n%s" % [
 		display_name,
+		tag_label,
 		level,
 		depth,
 		lives,
@@ -751,20 +760,9 @@ func _beacon_card_modifier_summary(beacon: Variant) -> String:
 
 
 func _beacon_card_accent(beacon: Variant) -> Color:
-	var depth := int(_beacon_value(beacon, "max_depth", 1))
-	var lives := int(_beacon_value(beacon, "lives_max", 1))
-	var modifier_ids := _beacon_modifier_ids(beacon)
-	if not bool(_beacon_value(beacon, "consumable", true)):
-		return Color(0.74, 0.82, 0.92, 1.0)
-	if modifier_ids.has("boss_reward"):
-		return Color(0.95, 0.73, 0.32, 1.0)
-	if lives <= 1 or modifier_ids.has("pressure"):
-		return Color(0.94, 0.47, 0.34, 1.0)
-	if depth >= 20 or modifier_ids.has("deep_range"):
-		return Color(0.38, 0.88, 0.98, 1.0)
-	if depth >= 12:
-		return Color(0.55, 0.93, 0.72, 1.0)
-	return Color(0.63, 0.78, 0.96, 1.0)
+	var template_data := _beacon_template_data(beacon)
+	var hex := str(template_data.get("accent_hex", "A1C7F5"))
+	return Color("#%s" % hex)
 
 
 func _beacon_modifier_ids(beacon: Variant) -> PackedStringArray:
@@ -776,3 +774,21 @@ func _beacon_modifier_ids(beacon: Variant) -> PackedStringArray:
 		for entry in raw_modifier_ids:
 			modifier_ids.append(str(entry))
 	return modifier_ids
+
+
+func _beacon_template_id(beacon: Variant) -> String:
+	var template_id := str(_beacon_value(beacon, "template_id", ""))
+	if not template_id.is_empty():
+		return template_id
+	if not bool(_beacon_value(beacon, "consumable", true)):
+		return "baseline"
+	return "balanced"
+
+
+func _beacon_template_data(beacon: Variant) -> Dictionary:
+	return DataManager.get_beacon_template_data(_beacon_template_id(beacon))
+
+
+func _beacon_template_label(beacon: Variant) -> String:
+	var template_data := _beacon_template_data(beacon)
+	return str(template_data.get("tag_label", "Beacon"))

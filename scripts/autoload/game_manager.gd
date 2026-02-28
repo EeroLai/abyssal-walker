@@ -352,6 +352,7 @@ func _create_beacon_from_config(config: Dictionary) -> Resource:
 	var beacon: Resource = ABYSS_BEACON_DATA_SCRIPT.new()
 	beacon.set("id", str(config.get("id", "")))
 	beacon.set("display_name", str(config.get("display_name", "Abyss Beacon")))
+	beacon.set("template_id", str(config.get("template_id", "balanced")))
 	beacon.set("base_difficulty", maxi(1, int(config.get("base_difficulty", 1))))
 	beacon.set("max_depth", maxi(1, int(config.get("max_depth", DEFAULT_OPERATION_MAX_DEPTH))))
 	beacon.set("lives_max", maxi(1, int(config.get("lives_max", DEFAULT_OPERATION_LIVES))))

@@ -10,6 +10,39 @@ This format is based on Keep a Changelog and uses simple sections:
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-02-28
+
+### Added
+- Data-driven abyss beacon modifier definitions via:
+  - `data/abyss/beacon_modifiers.json`
+- Data-driven abyss beacon template definitions via:
+  - `data/abyss/beacon_templates.json`
+- Boss-only high-end beacon template:
+  - `abyssal`
+
+### Changed
+- Beacon modifier logic now loads from data tables instead of hardcoded definitions in script.
+- Beacon template generation now loads from data tables for:
+  - source pools
+  - template weights
+  - base difficulty offsets
+  - depth ranges
+  - lives ranges
+  - modifier roll pools
+  - post-generation constraints
+- Beacon instances now store `template_id` so generation data and lobby presentation share the same source of truth.
+- Lobby beacon cards now derive type labels and accent colors from template metadata instead of heuristic checks.
+- Baseline dive is now only offered when beacon inventory is empty.
+
+### Balance
+- Normal enemy beacon drops now skew further toward safe/balanced templates.
+- Pressure beacons no longer appear from normal enemy drops.
+- Elite drops now favor balanced/deep templates with lower pressure weight.
+- Boss drops now split between balanced, deep, pressure, and low-weight abyssal templates.
+- Deep beacon depth ranges were tightened so `20-50` is no longer the default boss deep-roll band.
+- Maximum depth `50` is now reserved for the low-weight boss-only `abyssal` template.
+- Pressure beacon depth ranges were reduced to keep them focused on short high-risk runs.
+
 ## [2.2.0] - 2026-02-28
 
 ### Added

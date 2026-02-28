@@ -1,0 +1,46 @@
+{
+  "pressure": {
+    "name": "Pressure",
+    "summary": "More HP, damage, elites, and beacon quality.",
+    "enemy_hp_mult": 1.18,
+    "enemy_atk_mult": 1.15,
+    "enemy_count_bonus": 1,
+    "elite_chance_bonus": 0.08,
+    "beacon_drop_chance_bonus": 0.004,
+    "beacon_drop_level_bonus": 1,
+    "boss_bonus_beacons": 0
+  },
+  "deep_range": {
+    "name": "Deep Range",
+    "summary": "Longer encounters and stronger next beacon scaling.",
+    "enemy_hp_mult": 1.08,
+    "enemy_atk_mult": 1.04,
+    "enemy_count_bonus": 2,
+    "elite_chance_bonus": 0.02,
+    "beacon_drop_chance_bonus": 0.002,
+    "beacon_drop_level_bonus": 2,
+    "boss_bonus_beacons": 0
+  },
+  "boss_reward": {
+    "name": "Boss Reward",
+    "summary": "Boss grants one extra beacon.",
+    "enemy_hp_mult": 1.1,
+    "enemy_atk_mult": 1.05,
+    "enemy_count_bonus": 0,
+    "elite_chance_bonus": 0.0,
+    "beacon_drop_chance_bonus": 0.0,
+    "beacon_drop_level_bonus": 1,
+    "boss_bonus_beacons": 1
+  },
+  "survey": {
+    "name": "Survey",
+    "summary": "Slightly more enemies and better beacon discovery.",
+    "enemy_hp_mult": 1.04,
+    "enemy_atk_mult": 1.02,
+    "enemy_count_bonus": 1,
+    "elite_chance_bonus": 0.0,
+    "beacon_drop_chance_bonus": 0.003,
+    "beacon_drop_level_bonus": 0,
+    "boss_bonus_beacons": 0
+  }
+}

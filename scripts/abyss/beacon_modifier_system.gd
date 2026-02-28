@@ -1,52 +1,5 @@
 extends RefCounted
 
-const MODIFIER_DEFS := {
-	"pressure": {
-		"name": "Pressure",
-		"summary": "More HP, damage, elites, and beacon quality.",
-		"enemy_hp_mult": 1.18,
-		"enemy_atk_mult": 1.15,
-		"enemy_count_bonus": 1,
-		"elite_chance_bonus": 0.08,
-		"beacon_drop_chance_bonus": 0.004,
-		"beacon_drop_level_bonus": 1,
-		"boss_bonus_beacons": 0,
-	},
-	"deep_range": {
-		"name": "Deep Range",
-		"summary": "Longer encounters and stronger next beacon scaling.",
-		"enemy_hp_mult": 1.08,
-		"enemy_atk_mult": 1.04,
-		"enemy_count_bonus": 2,
-		"elite_chance_bonus": 0.02,
-		"beacon_drop_chance_bonus": 0.002,
-		"beacon_drop_level_bonus": 2,
-		"boss_bonus_beacons": 0,
-	},
-	"boss_reward": {
-		"name": "Boss Reward",
-		"summary": "Boss grants one extra beacon.",
-		"enemy_hp_mult": 1.10,
-		"enemy_atk_mult": 1.05,
-		"enemy_count_bonus": 0,
-		"elite_chance_bonus": 0.0,
-		"beacon_drop_chance_bonus": 0.0,
-		"beacon_drop_level_bonus": 1,
-		"boss_bonus_beacons": 1,
-	},
-	"survey": {
-		"name": "Survey",
-		"summary": "Slightly more enemies and better beacon discovery.",
-		"enemy_hp_mult": 1.04,
-		"enemy_atk_mult": 1.02,
-		"enemy_count_bonus": 1,
-		"elite_chance_bonus": 0.0,
-		"beacon_drop_chance_bonus": 0.003,
-		"beacon_drop_level_bonus": 0,
-		"boss_bonus_beacons": 0,
-	},
-}
-
 const UNKNOWN_MODIFIER_NAME := "Unknown Modifier"
 
 
@@ -63,7 +16,7 @@ static func summarize(modifier_ids: PackedStringArray) -> Dictionary:
 
 	for modifier_id in modifier_ids:
 		var id := str(modifier_id)
-		var def: Dictionary = MODIFIER_DEFS.get(id, {})
+		var def: Dictionary = _get_modifier_data(id)
 		if def.is_empty():
 			continue
 		summary["enemy_hp_mult"] = float(summary["enemy_hp_mult"]) * float(def.get("enemy_hp_mult", 1.0))
@@ -88,14 +41,14 @@ static func apply_floor_config_modifiers(config: Dictionary, modifier_ids: Packe
 
 
 static func get_modifier_name(modifier_id: String) -> String:
-	var def: Dictionary = MODIFIER_DEFS.get(modifier_id, {})
+	var def: Dictionary = _get_modifier_data(modifier_id)
 	if def.is_empty():
 		return UNKNOWN_MODIFIER_NAME
 	return str(def.get("name", modifier_id))
 
 
 static func get_modifier_summary(modifier_id: String) -> String:
-	var def: Dictionary = MODIFIER_DEFS.get(modifier_id, {})
+	var def: Dictionary = _get_modifier_data(modifier_id)
 	if def.is_empty():
 		return ""
 	return str(def.get("summary", ""))
@@ -112,3 +65,13 @@ static func get_modifier_display_lines(modifier_ids: PackedStringArray) -> Array
 		else:
 			lines.append("%s: %s" % [name, summary])
 	return lines
+
+
+static func has_modifier(modifier_id: String) -> bool:
+	return not _get_modifier_data(modifier_id).is_empty()
+
+
+static func _get_modifier_data(modifier_id: String) -> Dictionary:
+	if modifier_id.is_empty():
+		return {}
+	return DataManager.get_beacon_modifier_data(modifier_id)

@@ -275,92 +275,76 @@ static func _beacon_drop_level_from_context(context: Dictionary) -> int:
 static func _roll_beacon_template(context: Dictionary) -> String:
 	var is_boss: bool = bool(context.get("enemy_is_boss", false))
 	var is_elite: bool = bool(context.get("enemy_is_elite", false))
-	var weighted_templates: Array[Dictionary] = []
+	var source_id := "normal"
 	if is_boss:
-		weighted_templates = [
-			{"id": "balanced", "weight": 35},
-			{"id": "deep", "weight": 40},
-			{"id": "pressure", "weight": 25},
-		]
+		source_id = "boss"
 	elif is_elite:
-		weighted_templates = [
-			{"id": "balanced", "weight": 50},
-			{"id": "deep", "weight": 30},
-			{"id": "pressure", "weight": 20},
-		]
-	else:
-		weighted_templates = [
-			{"id": "safe", "weight": 50},
-			{"id": "balanced", "weight": 40},
-			{"id": "deep", "weight": 10},
-		]
+		source_id = "elite"
+	var weighted_templates: Array = DataManager.get_beacon_template_pool(source_id)
 	return _roll_weighted_template_id(weighted_templates)
 
 
-static func _roll_weighted_template_id(weighted_templates: Array[Dictionary]) -> String:
+static func _roll_weighted_template_id(weighted_templates: Array) -> String:
 	if weighted_templates.is_empty():
 		return "balanced"
 
 	var total_weight := 0
 	for entry in weighted_templates:
-		total_weight += maxi(0, int(entry.get("weight", 0)))
+		if not entry is Dictionary:
+			continue
+		var entry_data: Dictionary = entry
+		total_weight += maxi(0, int(entry_data.get("weight", 0)))
 	if total_weight <= 0:
-		return str(weighted_templates[0].get("id", "balanced"))
+		var first_entry: Variant = weighted_templates[0]
+		if first_entry is Dictionary:
+			return str((first_entry as Dictionary).get("id", "balanced"))
+		return "balanced"
 
 	var roll := randi_range(1, total_weight)
 	var cursor := 0
 	for entry in weighted_templates:
-		cursor += maxi(0, int(entry.get("weight", 0)))
+		if not entry is Dictionary:
+			continue
+		var entry_data: Dictionary = entry
+		cursor += maxi(0, int(entry_data.get("weight", 0)))
 		if roll <= cursor:
-			return str(entry.get("id", "balanced"))
-	return str(weighted_templates[weighted_templates.size() - 1].get("id", "balanced"))
+			return str(entry_data.get("id", "balanced"))
+	var last_entry: Variant = weighted_templates[weighted_templates.size() - 1]
+	if last_entry is Dictionary:
+		return str((last_entry as Dictionary).get("id", "balanced"))
+	return "balanced"
 
 
 static func _create_beacon_from_template(template_id: String, drop_level: int, context: Dictionary) -> Resource:
 	var beacon: Resource = ABYSS_BEACON_DATA_SCRIPT.new()
 	var safe_level := clampi(drop_level, 1, 100)
 	var is_boss: bool = bool(context.get("enemy_is_boss", false))
-	var display_name := "Abyss Beacon"
-	var base_difficulty := safe_level
-	var max_depth := 8
-	var lives_max := 3
-	var modifier_ids := PackedStringArray()
+	var template_data: Dictionary = DataManager.get_beacon_template_data(template_id)
+	if template_data.is_empty():
+		template_data = DataManager.get_beacon_template_data("balanced")
+	var constraints: Dictionary = DataManager.get_beacon_template_constraints()
+	var display_name := str(template_data.get("display_name", "Abyss Beacon"))
+	var base_offset: Dictionary = _dict_from_variant(template_data.get("base_difficulty_offset", {}))
+	var base_difficulty := clampi(safe_level + _roll_range_int(base_offset, 0, 0), 1, 100)
+	var depth_range: Dictionary = _resolve_beacon_depth_range(template_data, is_boss)
+	var max_depth := clampi(_roll_range_int(depth_range, 8, 8), 1, 100)
+	var lives_range: Dictionary = _dict_from_variant(template_data.get("lives", {}))
+	var lives_max := maxi(1, _roll_range_int(lives_range, 3, 3))
+	var modifier_ids := _roll_beacon_template_modifiers(template_data)
 
-	match template_id:
-		"safe":
-			display_name = "Survey Beacon"
-			base_difficulty = clampi(safe_level + randi_range(-2, 0), 1, 100)
-			max_depth = clampi(randi_range(5, 8), 1, 100)
-			lives_max = 3
-		"deep":
-			display_name = "Deep Range Beacon"
-			base_difficulty = clampi(safe_level + randi_range(-2, 0), 1, 100)
-			max_depth = clampi(_roll_deep_beacon_depth(is_boss), 1, 100)
-			lives_max = 2
-			if randf() < 0.35:
-				modifier_ids.append("deep_range")
-		"pressure":
-			display_name = "Pressure Beacon"
-			base_difficulty = clampi(safe_level + randi_range(1, 3), 1, 100)
-			max_depth = clampi(_roll_pressure_beacon_depth(is_boss), 1, 100)
-			lives_max = randi_range(1, 2)
-			modifier_ids.append(_roll_pressure_modifier_id())
-		_:
-			display_name = "Balanced Beacon"
-			base_difficulty = clampi(safe_level + randi_range(-1, 1), 1, 100)
-			max_depth = clampi(_roll_balanced_beacon_depth(is_boss), 1, 100)
-			lives_max = randi_range(2, 3)
-			if randf() < 0.2:
-				modifier_ids.append("survey")
-
-	if max_depth >= 12:
-		lives_max = mini(lives_max, 2)
-	if base_difficulty >= safe_level + 2:
-		max_depth = mini(max_depth, 10)
+	var depth_lives_cap_threshold := int(constraints.get("depth_lives_cap_threshold", 12))
+	var depth_lives_cap_value := int(constraints.get("depth_lives_cap_value", 2))
+	var difficulty_depth_cap_offset := int(constraints.get("difficulty_depth_cap_offset", 2))
+	var difficulty_depth_cap_value := int(constraints.get("difficulty_depth_cap_value", 10))
+	if max_depth >= depth_lives_cap_threshold:
+		lives_max = mini(lives_max, depth_lives_cap_value)
+	if base_difficulty >= safe_level + difficulty_depth_cap_offset:
+		max_depth = mini(max_depth, difficulty_depth_cap_value)
 
 	var unique_id := "beacon_%d_%04d" % [Time.get_ticks_usec(), randi() % 10000]
 	beacon.set("id", unique_id)
 	beacon.set("display_name", display_name)
+	beacon.set("template_id", template_id)
 	beacon.set("base_difficulty", base_difficulty)
 	beacon.set("max_depth", max_depth)
 	beacon.set("lives_max", lives_max)
@@ -368,31 +352,76 @@ static func _create_beacon_from_template(template_id: String, drop_level: int, c
 	return beacon
 
 
-static func _roll_pressure_modifier_id() -> String:
-	var ids := [
-		"pressure",
-		"boss_reward",
-		"deep_range",
-	]
-	return str(ids[randi() % ids.size()])
-
-
-static func _roll_balanced_beacon_depth(is_boss: bool) -> int:
+static func _resolve_beacon_depth_range(template_data: Dictionary, is_boss: bool) -> Dictionary:
 	if is_boss:
-		return randi_range(12, 24)
-	return randi_range(8, 14)
+		var boss_depth_range: Dictionary = _dict_from_variant(template_data.get("boss_depth", {}))
+		if not boss_depth_range.is_empty():
+			return boss_depth_range
+	return _dict_from_variant(template_data.get("depth", {}))
 
 
-static func _roll_deep_beacon_depth(is_boss: bool) -> int:
-	if is_boss:
-		return randi_range(20, 50)
-	return randi_range(14, 20)
+static func _roll_beacon_template_modifiers(template_data: Dictionary) -> PackedStringArray:
+	var modifier_ids := PackedStringArray()
+	var raw_rolls: Variant = template_data.get("modifier_rolls", [])
+	if not raw_rolls is Array:
+		return modifier_ids
+	for roll_entry in raw_rolls:
+		if not roll_entry is Dictionary:
+			continue
+		var roll_data: Dictionary = roll_entry
+		var chance := clampf(float(roll_data.get("chance", 1.0)), 0.0, 1.0)
+		if randf() > chance:
+			continue
+		var raw_pool: Variant = roll_data.get("pool", [])
+		if not raw_pool is Array:
+			continue
+		var modifier_id := _roll_weighted_id(raw_pool)
+		if not modifier_id.is_empty():
+			modifier_ids.append(modifier_id)
+	return modifier_ids
 
 
-static func _roll_pressure_beacon_depth(is_boss: bool) -> int:
-	if is_boss:
-		return randi_range(10, 18)
-	return randi_range(6, 12)
+static func _roll_weighted_id(weighted_entries: Array) -> String:
+	if weighted_entries.is_empty():
+		return ""
+	var total_weight := 0
+	for entry in weighted_entries:
+		if not entry is Dictionary:
+			continue
+		var entry_data: Dictionary = entry
+		total_weight += maxi(0, int(entry_data.get("weight", 0)))
+	if total_weight <= 0:
+		var first_entry: Variant = weighted_entries[0]
+		if first_entry is Dictionary:
+			return str((first_entry as Dictionary).get("id", ""))
+		return ""
+	var roll := randi_range(1, total_weight)
+	var cursor := 0
+	for entry in weighted_entries:
+		if not entry is Dictionary:
+			continue
+		var entry_data: Dictionary = entry
+		cursor += maxi(0, int(entry_data.get("weight", 0)))
+		if roll <= cursor:
+			return str(entry_data.get("id", ""))
+	var last_entry: Variant = weighted_entries[weighted_entries.size() - 1]
+	if last_entry is Dictionary:
+		return str((last_entry as Dictionary).get("id", ""))
+	return ""
+
+
+static func _roll_range_int(range_data: Dictionary, fallback_min: int, fallback_max: int) -> int:
+	var min_value := int(range_data.get("min", fallback_min))
+	var max_value := int(range_data.get("max", fallback_max))
+	if max_value < min_value:
+		var swap := min_value
+		min_value = max_value
+		max_value = swap
+	return randi_range(min_value, max_value)
+
+
+static func _dict_from_variant(value: Variant) -> Dictionary:
+	return value if value is Dictionary else {}
 
 
 static func _beacon_modifier_summary_from_context(context: Dictionary) -> Dictionary:

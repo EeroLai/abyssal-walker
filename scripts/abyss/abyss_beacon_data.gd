@@ -3,6 +3,7 @@ extends Resource
 
 @export var id: String = ""
 @export var display_name: String = "Abyss Beacon"
+@export var template_id: String = "balanced"
 @export_range(1, 100, 1) var base_difficulty: int = 1
 @export_range(1, 100, 1) var max_depth: int = 10
 @export_range(1, 9, 1) var lives_max: int = 3
@@ -11,6 +12,7 @@ extends Resource
 
 func to_operation_config() -> Dictionary:
 	return {
+		"template_id": template_id,
 		"base_difficulty": maxi(1, base_difficulty),
 		"operation_level": maxi(1, base_difficulty),
 		"max_depth": maxi(1, max_depth),
