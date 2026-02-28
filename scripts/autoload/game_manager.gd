@@ -20,6 +20,9 @@ enum OperationType {
 
 const DPS_WINDOW_DURATION := 5.0
 const DEFAULT_OPERATION_LIVES: int = 3
+const DEFAULT_OPERATION_MAX_DEPTH: int = 25
+const ABYSS_BEACON_DATA_SCRIPT := preload("res://scripts/abyss/abyss_beacon_data.gd")
+const BEACON_MODIFIER_SYSTEM := preload("res://scripts/abyss/beacon_modifier_system.gd")
 const STARTER_STASH_MATERIALS: Dictionary = {
 	"alter": 40,
 	"augment": 30,
@@ -52,14 +55,18 @@ var operation_loadout: Dictionary = {
 	"modules": [],
 }
 var operation_loot_ledger: Array[Dictionary] = []
+var beacon_inventory: Array = []
 var persistent_player_build: Dictionary = {}
 var last_run_extracted_summary: Dictionary = {}
 var last_run_failed_summary: Dictionary = {}
 var operation_session: Dictionary = {
+	"base_difficulty": 1,
 	"operation_level": 1,
+	"max_depth": DEFAULT_OPERATION_MAX_DEPTH,
 	"operation_type": OperationType.NORMAL,
 	"lives_max": DEFAULT_OPERATION_LIVES,
 	"lives_left": DEFAULT_OPERATION_LIVES,
+	"modifier_ids": PackedStringArray(),
 	"danger": 0,
 }
 
@@ -172,8 +179,6 @@ func enter_floor(floor_number: int) -> void:
 func complete_floor() -> void:
 	EventBus.floor_cleared.emit(current_floor)
 	add_danger(1)
-	operation_session.operation_level = maxi(int(operation_session.operation_level), current_floor + 1)
-	_emit_operation_session_changed()
 	current_floor += 1
 
 
@@ -183,28 +188,84 @@ func fail_floor() -> void:
 
 
 func start_operation(
-	operation_level: int = 1,
+	base_difficulty: int = 1,
 	operation_type: int = OperationType.NORMAL,
-	lives: int = DEFAULT_OPERATION_LIVES
+	lives: int = DEFAULT_OPERATION_LIVES,
+	max_depth: int = DEFAULT_OPERATION_MAX_DEPTH,
+	modifier_ids: PackedStringArray = PackedStringArray()
 ) -> void:
 	operation_session = {
-		"operation_level": maxi(1, operation_level),
+		"base_difficulty": maxi(1, base_difficulty),
+		"operation_level": maxi(1, base_difficulty),
+		"max_depth": maxi(1, max_depth),
 		"operation_type": operation_type,
 		"lives_max": maxi(1, lives),
 		"lives_left": maxi(1, lives),
+		"modifier_ids": modifier_ids.duplicate(),
 		"danger": 0,
 	}
+	current_floor = 1
 	clear_run_backpack_loot()
 	clear_operation_loot_ledger()
 	_emit_operation_session_changed()
 
 
+func start_operation_from_beacon(
+	beacon: Resource,
+	operation_type: int = OperationType.NORMAL
+) -> void:
+	if beacon == null:
+		start_operation(1, operation_type, DEFAULT_OPERATION_LIVES, DEFAULT_OPERATION_MAX_DEPTH)
+		return
+	var beacon_modifier_ids := PackedStringArray()
+	var raw_modifier_ids: Variant = beacon.get("modifier_ids")
+	if raw_modifier_ids is PackedStringArray:
+		beacon_modifier_ids = raw_modifier_ids.duplicate()
+	elif raw_modifier_ids is Array:
+		for entry in raw_modifier_ids:
+			beacon_modifier_ids.append(str(entry))
+	start_operation(
+		int(beacon.get("base_difficulty")),
+		operation_type,
+		int(beacon.get("lives_max")),
+		int(beacon.get("max_depth")),
+		beacon_modifier_ids
+	)
+
+
+func consume_beacon(index: int) -> Resource:
+	if index < 0 or index >= beacon_inventory.size():
+		return null
+	var beacon: Variant = beacon_inventory[index]
+	beacon_inventory.remove_at(index)
+	_emit_beacon_inventory_changed()
+	if beacon is Resource:
+		return beacon
+	return null
+
+
+func activate_beacon(index: int, operation_type: int = OperationType.NORMAL) -> bool:
+	var beacon := consume_beacon(index)
+	if beacon == null:
+		return false
+	start_operation_from_beacon(beacon, operation_type)
+	return true
+
+
 func reset_operation() -> void:
-	start_operation(1, OperationType.NORMAL, DEFAULT_OPERATION_LIVES)
+	start_operation(1, OperationType.NORMAL, DEFAULT_OPERATION_LIVES, DEFAULT_OPERATION_MAX_DEPTH)
+
+
+func get_base_difficulty() -> int:
+	return int(operation_session.get("base_difficulty", operation_session.get("operation_level", 1)))
 
 
 func get_operation_level() -> int:
-	return int(operation_session.get("operation_level", 1))
+	return get_base_difficulty()
+
+
+func get_max_depth() -> int:
+	return int(operation_session.get("max_depth", DEFAULT_OPERATION_MAX_DEPTH))
 
 
 func get_operation_type() -> int:
@@ -221,6 +282,18 @@ func get_lives_left() -> int:
 
 func get_danger() -> int:
 	return int(operation_session.get("danger", 0))
+
+
+func get_modifier_ids() -> PackedStringArray:
+	var value: Variant = operation_session.get("modifier_ids", PackedStringArray())
+	if value is PackedStringArray:
+		return value.duplicate()
+	if value is Array:
+		var ids := PackedStringArray()
+		for entry in value:
+			ids.append(str(entry))
+		return ids
+	return PackedStringArray()
 
 
 func add_danger(amount: int) -> void:
@@ -242,13 +315,23 @@ func restore_lives() -> void:
 	_emit_operation_session_changed()
 
 
-func get_effective_drop_level(fallback_floor: int) -> int:
-	var floor_from_operation := get_operation_level() + get_danger()
-	return clampi(maxi(fallback_floor, floor_from_operation), 1, 100)
+func get_effective_drop_level(depth_index: int) -> int:
+	var base_difficulty := get_base_difficulty()
+	var depth := maxi(1, depth_index)
+	return clampi(base_difficulty + depth - 1 + get_danger(), 1, 100)
+
+
+func has_reached_max_depth(depth_index: int) -> bool:
+	return maxi(1, depth_index) >= get_max_depth()
 
 
 func get_operation_summary() -> Dictionary:
-	return operation_session.duplicate(true)
+	var summary := operation_session.duplicate(true)
+	summary["base_difficulty"] = get_base_difficulty()
+	summary["operation_level"] = get_base_difficulty()
+	summary["max_depth"] = get_max_depth()
+	summary["modifier_ids"] = get_modifier_ids()
+	return summary
 
 
 func _emit_operation_session_changed() -> void:
@@ -263,6 +346,66 @@ func _ensure_starter_stash() -> void:
 		var amount: int = int(STARTER_STASH_MATERIALS[id])
 		if amount > 0:
 			stash_materials[id] = amount
+
+
+func _create_beacon_from_config(config: Dictionary) -> Resource:
+	var beacon: Resource = ABYSS_BEACON_DATA_SCRIPT.new()
+	beacon.set("id", str(config.get("id", "")))
+	beacon.set("display_name", str(config.get("display_name", "Abyss Beacon")))
+	beacon.set("base_difficulty", maxi(1, int(config.get("base_difficulty", 1))))
+	beacon.set("max_depth", maxi(1, int(config.get("max_depth", DEFAULT_OPERATION_MAX_DEPTH))))
+	beacon.set("lives_max", maxi(1, int(config.get("lives_max", DEFAULT_OPERATION_LIVES))))
+	var modifier_ids := PackedStringArray()
+	var raw_modifier_ids: Variant = config.get("modifier_ids", PackedStringArray())
+	if raw_modifier_ids is PackedStringArray:
+		modifier_ids = raw_modifier_ids.duplicate()
+	elif raw_modifier_ids is Array:
+		for entry in raw_modifier_ids:
+			modifier_ids.append(str(entry))
+	beacon.set("modifier_ids", modifier_ids)
+	return beacon
+
+
+func get_beacon_inventory_count() -> int:
+	return beacon_inventory.size()
+
+
+func get_beacon_inventory_snapshot() -> Array:
+	var snapshot: Array = []
+	for beacon in beacon_inventory:
+		if beacon is Resource:
+			snapshot.append((beacon as Resource).duplicate(true))
+	return snapshot
+
+
+func get_beacon_snapshot(index: int) -> Resource:
+	if index < 0 or index >= beacon_inventory.size():
+		return null
+	var beacon: Variant = beacon_inventory[index]
+	if beacon is Resource:
+		return (beacon as Resource).duplicate(true)
+	return null
+
+
+func update_beacon(index: int, beacon: Resource) -> bool:
+	if beacon == null:
+		return false
+	if index < 0 or index >= beacon_inventory.size():
+		return false
+	beacon_inventory[index] = beacon.duplicate(true)
+	_emit_beacon_inventory_changed()
+	return true
+
+
+func add_beacon(beacon: Resource) -> void:
+	if beacon == null:
+		return
+	beacon_inventory.append(beacon.duplicate(true))
+	_emit_beacon_inventory_changed()
+
+
+func _emit_beacon_inventory_changed() -> void:
+	EventBus.beacon_inventory_changed.emit(get_beacon_inventory_snapshot())
 
 
 func should_open_extraction_window(floor_number: int) -> bool:
@@ -1057,6 +1200,28 @@ func _on_damage_dealt(_source: Node, _target: Node, damage_info: Dictionary) -> 
 func _on_enemy_died(_enemy: Node, _position: Vector2) -> void:
 	session_stats.kills += 1
 	EventBus.kill_count_changed.emit(session_stats.kills)
+	var enemy_base := _enemy as EnemyBase
+	if enemy_base == null:
+		return
+	var gained_beacons: Array[Resource] = []
+	var beacon := DropSystem.roll_beacon_drop_for_floor(current_floor, enemy_base)
+	if beacon != null:
+		gained_beacons.append(beacon)
+	if enemy_base.is_boss:
+		var summary := BEACON_MODIFIER_SYSTEM.summarize(get_modifier_ids())
+		var extra_boss_beacons := maxi(0, int(summary.get("boss_bonus_beacons", 0)))
+		for i in range(extra_boss_beacons):
+			var extra_beacon := DropSystem.create_guaranteed_beacon_for_floor(current_floor, enemy_base)
+			if extra_beacon != null:
+				gained_beacons.append(extra_beacon)
+	if gained_beacons.is_empty():
+		return
+	for gained in gained_beacons:
+		add_beacon(gained)
+	if gained_beacons.size() == 1:
+		EventBus.notification_requested.emit("信標入庫：%s" % str(gained_beacons[0].get("display_name")), "beacon")
+	else:
+		EventBus.notification_requested.emit("信標入庫：%d" % gained_beacons.size(), "beacon")
 
 
 func _on_player_died() -> void:

@@ -1,6 +1,8 @@
 class_name Game
 extends Node2D
 
+const BEACON_MODIFIER_SYSTEM := preload("res://scripts/abyss/beacon_modifier_system.gd")
+
 @export var player_scene: PackedScene
 @export var damage_number_scene: PackedScene
 @export var dropped_item_scene: PackedScene
@@ -60,8 +62,6 @@ var _extraction_decided: bool = false
 var _run_fail_waiting_return: bool = false
 var _run_fail_return_confirmed: bool = false
 
-const GEM_DROP_CHANCE := 0.01
-const MATERIAL_DROP_CHANCE := 0.12
 const EXTRACTION_WINDOW_DURATION := 10.0
 const RUN_SUMMARY_TIMEOUT_MS := 45000
 const STARTER_BACKUP_WEAPON_IDS: Array[String] = [
@@ -287,9 +287,11 @@ func _start_floor(floor_number: int) -> void:
 		config = DataManager.get_floor_config(1)
 	config = config.duplicate(true)
 	_configure_floor_objective(floor_number, config)
+	config = BEACON_MODIFIER_SYSTEM.apply_floor_config_modifiers(config, GameManager.get_modifier_ids())
 
 	enemy_spawner.setup(config, player)
 	enemy_spawner.set_floor_number(floor_number)
+	enemy_spawner.set_effective_level(effective_level)
 	enemy_spawner.spawn_wave()
 
 	is_floor_active = true
@@ -301,11 +303,11 @@ func _start_floor(floor_number: int) -> void:
 
 
 func _configure_floor_objective(floor_number: int, config: Dictionary) -> void:
-	if floor_number % 10 == 0:
+	config.erase("boss")
+	if floor_number == GameManager.get_max_depth():
 		floor_objective_type = FloorObjectiveType.BOSS_KILL
 		required_boss_kills = 1
-		if not config.has("boss"):
-			config["boss"] = "abyss_watcher"
+		config["boss"] = "abyss_watcher"
 
 
 func _objective_text() -> String:
@@ -407,177 +409,13 @@ func _on_enemy_died(enemy: Node, drop_position: Vector2) -> void:
 			elite_kills_on_floor += 1
 			GameManager.add_danger(1)
 
-	if randf() < 0.14:  # 14% equipment drop chance
-		_drop_item(drop_position)
-	if randf() < GEM_DROP_CHANCE:  # 1.0% gem drop chance
-		_drop_gem(drop_position)
-	if randf() < MATERIAL_DROP_CHANCE:  # 12% material drop chance
-		_drop_material(drop_position)
-	if randf() < 0.012:  # 1.2% module drop chance
-		_drop_module(drop_position)
+	var drops := DropSystem.roll_enemy_drops_for_floor(current_floor, enemy_base)
+	for item in drops:
+		_spawn_dropped_item(item, drop_position)
 
 	_update_progression_hud()
 	if floor_objective_type == FloorObjectiveType.BOSS_KILL and boss_kills_on_floor >= required_boss_kills:
 		await _on_floor_objective_completed()
-
-
-func _drop_item(drop_position: Vector2) -> void:
-	var slots: Array[StatTypes.EquipmentSlot] = [
-		StatTypes.EquipmentSlot.MAIN_HAND,
-		StatTypes.EquipmentSlot.MAIN_HAND,  # weapon weight x2
-		StatTypes.EquipmentSlot.OFF_HAND,
-		StatTypes.EquipmentSlot.HELMET,
-		StatTypes.EquipmentSlot.ARMOR,
-		StatTypes.EquipmentSlot.ARMOR,  # armor weight x2
-		StatTypes.EquipmentSlot.GLOVES,
-		StatTypes.EquipmentSlot.BOOTS,
-		StatTypes.EquipmentSlot.BELT,
-		StatTypes.EquipmentSlot.AMULET,
-		StatTypes.EquipmentSlot.RING_1,
-	]
-	var slot: StatTypes.EquipmentSlot = slots[randi() % slots.size()]
-
-	var drop_level: int = GameManager.get_effective_drop_level(current_floor)
-	var equipment: EquipmentData = ItemGenerator.generate_random_equipment(slot, drop_level)
-	if equipment:
-		_spawn_dropped_item(equipment, drop_position)
-
-
-func _drop_gem(drop_position: Vector2) -> void:
-	var effective_level: int = GameManager.get_effective_drop_level(current_floor)
-	var level: int = _roll_gem_drop_level(effective_level)
-	var gem: Resource = _create_random_gem(level)
-	if gem != null:
-		_spawn_dropped_item(gem, drop_position)
-
-
-func _create_random_gem(level: int) -> Resource:
-	var drop_skill: bool = randf() < 0.5
-	if drop_skill:
-		var skill_ids: Array = DataManager.get_all_skill_gem_ids()
-		if skill_ids.is_empty():
-			return null
-		var skill_id: String = skill_ids[randi() % skill_ids.size()]
-		var skill: SkillGem = DataManager.create_skill_gem(skill_id)
-		if skill != null:
-			skill.level = level
-			skill.experience = 0.0
-		return skill
-	var support_ids: Array = DataManager.get_all_support_gem_ids()
-	if support_ids.is_empty():
-		return null
-	var support_id: String = support_ids[randi() % support_ids.size()]
-	var support: SupportGem = DataManager.create_support_gem(support_id)
-	if support != null:
-		support.level = level
-		support.experience = 0.0
-	return support
-
-
-func _roll_gem_drop_level(floor_number: int) -> int:
-	var min_lv := 1
-	var max_lv := 2
-	if floor_number >= 100:
-		min_lv = 15
-		max_lv = 20
-	elif floor_number >= 85:
-		min_lv = 12
-		max_lv = 16
-	elif floor_number >= 70:
-		min_lv = 9
-		max_lv = 13
-	elif floor_number >= 55:
-		min_lv = 7
-		max_lv = 10
-	elif floor_number >= 40:
-		min_lv = 5
-		max_lv = 8
-	elif floor_number >= 25:
-		min_lv = 3
-		max_lv = 6
-	elif floor_number >= 10:
-		min_lv = 2
-		max_lv = 4
-	return clampi(randi_range(min_lv, max_lv), 1, Constants.MAX_GEM_LEVEL)
-
-
-func _drop_module(drop_position: Vector2) -> void:
-	var effective_level: int = GameManager.get_effective_drop_level(current_floor)
-	var module_id: String = _pick_module_id_for_level(effective_level)
-	if module_id.is_empty():
-		return
-	var mod := DataManager.create_module(module_id)
-	if mod:
-		_spawn_dropped_item(mod, drop_position)
-
-
-func _pick_module_id_for_level(effective_level: int) -> String:
-	var ids := DataManager.get_all_module_ids()
-	if ids.is_empty():
-		return ""
-
-	var target_load: float = _target_module_load(effective_level)
-	var weighted_ids: Array[String] = []
-	var weighted_scores: Array[float] = []
-	var total_weight: float = 0.0
-
-	for module_id in ids:
-		var module_data: Dictionary = DataManager.get_module_data(module_id)
-		if module_data.is_empty():
-			continue
-
-		var load_cost: int = int(module_data.get("load_cost", 0))
-		var is_starter: bool = bool(module_data.get("is_starter", false))
-		var dist := absf(float(load_cost) - target_load)
-		var base_weight := 1.0 / (1.0 + dist * 0.25)
-		if is_starter:
-			base_weight *= 0.35
-		if effective_level >= 70 and load_cost >= 15:
-			base_weight *= 1.4
-		elif effective_level <= 25 and load_cost <= 10:
-			base_weight *= 1.25
-		base_weight = maxf(base_weight, 0.01)
-
-		weighted_ids.append(module_id)
-		weighted_scores.append(base_weight)
-		total_weight += base_weight
-
-	if weighted_ids.is_empty():
-		return ""
-	if total_weight <= 0.0:
-		return weighted_ids[randi() % weighted_ids.size()]
-
-	var roll := randf() * total_weight
-	var cursor := 0.0
-	for i in range(weighted_ids.size()):
-		cursor += weighted_scores[i]
-		if roll <= cursor:
-			return weighted_ids[i]
-	return weighted_ids[weighted_ids.size() - 1]
-
-
-func _target_module_load(effective_level: int) -> float:
-	if effective_level >= 85:
-		return 18.0
-	if effective_level >= 70:
-		return 15.0
-	if effective_level >= 45:
-		return 12.0
-	if effective_level >= 20:
-		return 10.0
-	return 8.0
-
-
-func _drop_material(drop_position: Vector2) -> void:
-	var ids := DataManager.get_all_material_ids()
-	if ids.is_empty():
-		return
-	var id: String = ids[randi() % ids.size()]
-	var amount := 1
-	_spawn_dropped_item({
-		"material_id": id,
-		"amount": amount,
-	}, drop_position)
 
 
 func _spawn_dropped_item(item: Variant, drop_position: Vector2) -> void:
@@ -614,6 +452,10 @@ func _on_floor_objective_completed() -> void:
 	is_floor_active = false
 	enemy_spawner.clear_enemies()
 	var cleared_floor: int = current_floor
+	if GameManager.has_reached_max_depth(cleared_floor):
+		GameManager.close_extraction_window(cleared_floor, true, player)
+		await _reset_after_extraction("Depth Cap Reached")
+		return
 	if GameManager.should_open_extraction_window(cleared_floor):
 		var extracted: bool = await _run_extraction_window(cleared_floor)
 		if extracted:
@@ -842,7 +684,7 @@ func _run_extraction_window(floor_number: int) -> bool:
 	return _extraction_selected
 
 
-func _reset_after_extraction() -> void:
+func _reset_after_extraction(summary_title: String = "Extraction Success") -> void:
 	print("[Extracted] floor=%d" % current_floor)
 	progression_mode = ProgressionMode.PUSHING
 	pending_failed_floor = 0
@@ -860,7 +702,7 @@ func _reset_after_extraction() -> void:
 		moved_modules,
 		stash_total,
 	]
-	await _wait_for_run_summary("Extraction Success", extraction_body)
+	await _wait_for_run_summary(summary_title, extraction_body)
 	_return_to_lobby()
 
 

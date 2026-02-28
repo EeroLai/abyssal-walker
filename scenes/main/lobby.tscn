@@ -205,6 +205,7 @@ theme_override_colors/font_color = Color(0.55, 0.73, 0.88, 1)
 theme_override_font_sizes/font_size = 16
 
 [node name="ConfigRow" type="HBoxContainer" parent="RootPanel/Content"]
+visible = false
 layout_mode = 2
 theme_override_constants/separation = 12
 
@@ -219,10 +220,29 @@ theme_override_constants/separation = 6
 
 [node name="OperationLevelText" type="Label" parent="RootPanel/Content/ConfigRow/OperationCard/OperationCardBody"]
 layout_mode = 2
-text = "Operation Level"
+text = "Base Difficulty"
 theme_override_colors/font_color = Color(0.74, 0.85, 0.95, 1)
 
 [node name="OperationLevelSpin" type="SpinBox" parent="RootPanel/Content/ConfigRow/OperationCard/OperationCardBody"]
+custom_minimum_size = Vector2(0, 34)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="DepthCard" type="PanelContainer" parent="RootPanel/Content/ConfigRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("StyleBoxFlat_card")
+
+[node name="DepthCardBody" type="VBoxContainer" parent="RootPanel/Content/ConfigRow/DepthCard"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="DepthText" type="Label" parent="RootPanel/Content/ConfigRow/DepthCard/DepthCardBody"]
+layout_mode = 2
+text = "Max Depth"
+theme_override_colors/font_color = Color(0.74, 0.85, 0.95, 1)
+
+[node name="DepthSpin" type="SpinBox" parent="RootPanel/Content/ConfigRow/DepthCard/DepthCardBody"]
 custom_minimum_size = Vector2(0, 34)
 layout_mode = 2
 size_flags_horizontal = 3
@@ -251,10 +271,48 @@ layout_mode = 2
 alignment = 1
 theme_override_constants/separation = 12
 
+[node name="BeaconCard" type="PanelContainer" parent="RootPanel/Content"]
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_card")
+
+[node name="BeaconCardBody" type="VBoxContainer" parent="RootPanel/Content/BeaconCard"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="BeaconTitle" type="Label" parent="RootPanel/Content/BeaconCard/BeaconCardBody"]
+layout_mode = 2
+text = "Beacon Inventory"
+theme_override_colors/font_color = Color(0.74, 0.85, 0.95, 1)
+
+[node name="BeaconCount" type="Label" parent="RootPanel/Content/BeaconCard/BeaconCardBody"]
+layout_mode = 2
+text = "Owned Beacons: 0"
+theme_override_colors/font_color = Color(0.55, 0.73, 0.88, 1)
+
+[node name="BeaconScroll" type="ScrollContainer" parent="RootPanel/Content/BeaconCard/BeaconCardBody"]
+custom_minimum_size = Vector2(0, 208)
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleBoxFlat_list")
+
+[node name="BeaconGrid" type="GridContainer" parent="RootPanel/Content/BeaconCard/BeaconCardBody/BeaconScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+columns = 3
+theme_override_constants/h_separation = 8
+theme_override_constants/v_separation = 8
+
+[node name="BeaconSummary" type="Label" parent="RootPanel/Content/BeaconCard/BeaconCardBody"]
+custom_minimum_size = Vector2(0, 156)
+layout_mode = 2
+text = "Configured Beacon"
+autowrap_mode = 3
+theme_override_colors/font_color = Color(0.86, 0.94, 1, 1)
+
 [node name="StartButton" type="Button" parent="RootPanel/Content/ButtonsRow"]
 custom_minimum_size = Vector2(180, 44)
 layout_mode = 2
-text = "Start Operation"
+text = "Activate Beacon"
 theme_override_styles/normal = SubResource("StyleBoxFlat_button_primary")
 theme_override_styles/hover = SubResource("StyleBoxFlat_button_primary_hover")
 theme_override_styles/pressed = SubResource("StyleBoxFlat_button_primary")

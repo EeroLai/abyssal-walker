@@ -61,6 +61,7 @@ signal game_resumed
 signal kill_count_changed(count: int)
 signal dps_updated(dps: float)
 signal operation_session_changed(summary: Dictionary)
+signal beacon_inventory_changed(snapshot: Array)
 signal extraction_window_opened(floor_number: int, timeout_sec: float)
 signal extraction_window_closed(floor_number: int, extracted: bool)
 signal run_extracted(summary: Dictionary)

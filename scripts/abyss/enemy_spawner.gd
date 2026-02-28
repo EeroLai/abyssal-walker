@@ -11,6 +11,7 @@ var active_enemies: Array[EnemyBase] = []
 var floor_config: Dictionary = {}
 var player: Node2D = null
 var current_floor: int = 1
+var current_effective_level: int = 1
 
 var _spawn_queue: Array[Dictionary] = []
 var _spawn_timer: float = 0.0
@@ -37,6 +38,10 @@ func setup(config: Dictionary, player_ref: Node2D) -> void:
 
 func set_floor_number(floor_number: int) -> void:
 	current_floor = max(1, floor_number)
+
+
+func set_effective_level(level: int) -> void:
+	current_effective_level = max(1, level)
 
 
 func spawn_wave() -> void:
@@ -217,7 +222,8 @@ func _get_enemy_color(element: StatTypes.Element, is_elite: bool, is_boss: bool)
 func _apply_elite_roll(enemy: EnemyBase) -> void:
 	if enemy == null or enemy.is_boss:
 		return
-	var elite_chance := clampf(0.18 + float(current_floor) * 0.003, 0.18, 0.55)
+	var elite_bonus := float(floor_config.get("elite_chance_bonus", 0.0))
+	var elite_chance := clampf(0.16 + float(current_effective_level) * 0.004 + elite_bonus, 0.16, 0.75)
 	if randf() > elite_chance:
 		return
 	var affix_count := 1 if randf() < 0.78 else 2

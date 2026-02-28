@@ -65,6 +65,7 @@ func _connect_signals() -> void:
 	EventBus.status_applied.connect(_on_status_applied)
 	EventBus.status_removed.connect(_on_status_removed)
 	EventBus.loot_filter_changed.connect(_on_loot_filter_changed)
+	EventBus.notification_requested.connect(_on_notification_requested)
 	EventBus.operation_session_changed.connect(_on_operation_session_changed)
 	EventBus.extraction_window_opened.connect(_on_extraction_window_opened)
 	EventBus.extraction_window_closed.connect(_on_extraction_window_closed)
@@ -495,11 +496,18 @@ func _on_loot_filter_changed(_mode: int) -> void:
 func _on_operation_session_changed(summary: Dictionary) -> void:
 	if operation_label == null:
 		return
-	var operation_level: int = int(summary.get("operation_level", 1))
+	var base_difficulty: int = int(summary.get("base_difficulty", summary.get("operation_level", 1)))
+	var max_depth: int = int(summary.get("max_depth", 0))
 	var danger: int = int(summary.get("danger", 0))
 	var lives_left: int = int(summary.get("lives_left", 0))
 	var lives_max: int = int(summary.get("lives_max", 0))
-	operation_label.text = "Operation Lv %d  Danger %d  Lives %d/%d" % [operation_level, danger, lives_left, lives_max]
+	operation_label.text = "Base Lv %d  Cap %d  Danger %d  Lives %d/%d" % [
+		base_difficulty,
+		max_depth,
+		danger,
+		lives_left,
+		lives_max,
+	]
 
 
 func _on_extraction_window_opened(_floor_number: int, timeout_sec: float) -> void:
@@ -580,6 +588,20 @@ func _refresh_loot_filter_label() -> void:
 	if loot_filter_label == null:
 		return
 	loot_filter_label.text = "[L] 掉落過濾: %s" % GameManager.get_loot_filter_name()
+
+
+func _on_notification_requested(message: String, type: String) -> void:
+	if message.is_empty():
+		return
+	var color := Color(0.82, 0.9, 1.0)
+	match type:
+		"beacon":
+			color = Color(0.52, 0.92, 1.0)
+		"warning":
+			color = Color(1.0, 0.78, 0.42)
+		"error":
+			color = Color(1.0, 0.48, 0.48)
+	_add_feed_entry("notice:%s:%s" % [type, message], message, 1, color)
 
 
 func _show_pickup_message(item_data: Variant) -> void:

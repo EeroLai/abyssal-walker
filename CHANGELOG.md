@@ -10,6 +10,48 @@ This format is based on Keep a Changelog and uses simple sections:
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-02-28
+
+### Added
+- Abyss beacon run model with dedicated beacon data and modifier systems:
+  - `AbyssBeaconData`
+  - `BeaconModifierSystem`
+- Lobby beacon inventory flow with card-based selection UI.
+- Baseline fallback dive that can start a lowest-tier run without consuming a beacon.
+- Beacon inventory runtime event:
+  - `beacon_inventory_changed`
+- Beacon acquisition HUD notifications.
+- Beacon drop generation pipeline for:
+  - Normal enemies
+  - Elite enemies
+  - Bosses
+
+### Changed
+- Lobby run start flow now uses selected beacons instead of direct `Operation Level` / `Lives` setup.
+- Operation session semantics were rewritten around:
+  - `base_difficulty`
+  - `max_depth`
+  - `modifier_ids`
+- Effective scaling formula is now based on:
+  - `base_difficulty + depth - 1 + danger`
+- Boss spawn cadence now resolves at beacon `max_depth` instead of `% 10` floor rhythm.
+- Beacon selection UI moved away from simple list/dropdown selection into a grid-style inventory presentation.
+
+### Fixed
+- Fixed boss spawning logic being mixed between floor anchor config and run depth cadence.
+- Fixed elite spawn chance scaling from raw floor progression instead of effective difficulty.
+- Fixed combat/drop configuration responsibilities that were previously scattered through `game.gd`.
+
+### Balance
+- Bosses now always award a beacon.
+- Normal enemies now have a very low chance to award a beacon, and elites have a low chance.
+- Beacon depth distribution is now split by source:
+  - Normal/elite drops stay in the low-to-mid range
+  - Boss drops can reach the highest deep-run ranges
+- Beacon modifiers now affect combat pressure and beacon rewards through enemy HP/ATK/count, elite rate, beacon quality, and extra boss beacon reward.
+
+## [2.1.0] - 2026-02-28
+
 ### Changed
 - Unified operation loadout return logic into a single loot ledger state machine for all tracked categories:
   - Equipment
