@@ -1,13 +1,13 @@
 # abyssal-walker
 
-[English](README.md) | [繁體中文](README.zh-TW.md)
+[English](README.md) | [Traditional Chinese](README.zh-TW.md)
 
-`abyssal-walker` is a Godot 4 action RPG prototype built around an operation-style risk/reward loop:
+`abyssal-walker` is a Godot 4 action RPG prototype built around a beacon-driven abyss run loop:
 
-- Prepare in lobby
-- Enter an operation run
-- Loot and decide whether to extract
-- Bank rewards on extraction, or lose run loot on failure
+- Prepare in the lobby
+- Select an `Abyss Beacon`
+- Dive, loot, and manage danger
+- Extract rewards or lose run loot on failure
 
 ## Gameplay Preview
 
@@ -25,23 +25,55 @@
 
 ## Current Gameplay Loop
 
-1. Enter `Lobby`
-2. Set `Operation Level` and `Lives`
-3. Configure operation loadout from stash loot
-4. Enter run and clear abyss encounters
-5. Collect loot (equipment / skill gems / support gems / modules)
-6. Choose to extract or keep pushing
-7. Confirm run summary and return to lobby
+1. Enter the `Lobby`
+2. Review stash resources and configure the operation loadout
+3. Select an `Abyss Beacon` from inventory
+4. If no beacon is available, start a `Baseline Dive`
+5. Enter the run with beacon-defined:
+   - `base_difficulty`
+   - `max_depth`
+   - `lives_max`
+   - `modifier_ids`
+6. Clear floors, build `danger`, and fight elites on the way down
+7. Decide whether to extract during extraction windows or push deeper
+8. Defeat the boss at the beacon's `max_depth`
+9. Bring rewards back to the lobby, or lose run backpack loot on failure
 
 ## Core Systems
 
-- Operation session state (`operation_level`, `danger`, `lives`)
-- Risk-scaled drop quality
-- Run backpack loot (`run_backpack_loot`)
-- Persistent stash loot (`stash_loot`)
-- Persistent stash materials (`stash_materials`)
-- Manual confirm extraction/failure summary flow
-- Data-driven content in `data/*.json`
+- Lobby-driven preparation flow
+- Beacon inventory and consumption
+- `Baseline Dive` fallback when beacon inventory is empty
+- Beacon-generated runs with:
+  - template-based depth/life distributions
+  - data-driven modifiers
+  - boss-guaranteed beacon drops
+- Effective scaling based on:
+  - `base_difficulty + depth - 1 + danger`
+- Run risk inventory:
+  - `run_backpack_loot`
+- Persistent storage:
+  - `stash_loot`
+  - `stash_materials`
+- Loadout prep from stash before each run
+- Data-driven abyss content in:
+  - `data/abyss/floors.json`
+  - `data/abyss/beacon_modifiers.json`
+  - `data/abyss/beacon_templates.json`
+
+## Beacon System
+
+- Beacons define the structure of each run instead of manual run parameter setup.
+- Standard beacon fields include:
+  - `base_difficulty`
+  - `max_depth`
+  - `lives_max`
+  - `modifier_ids`
+  - `template_id`
+- Beacons are consumed on activation.
+- Bosses always drop a beacon.
+- Normal and elite enemies can also drop beacons at lower rates.
+- Boss-only high-end templates can reach the deepest runs.
 
 ## Controls
 
@@ -65,7 +97,8 @@
 
 1. Install Godot 4.x
 2. Open this project folder in Godot
-3. Run the project (entry scene is lobby)
+3. Run the project
+4. The project starts in the lobby
 
 ## Changelog
 
