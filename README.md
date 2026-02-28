@@ -1,6 +1,6 @@
 # abyssal-walker
 
-[English](README.md) | [蝜?銝剜?](README.zh-TW.md)
+[English](README.md) | [繁體中文](README.zh-TW.md)
 
 `abyssal-walker` is a Godot 4 action RPG prototype built around an operation-style risk/reward loop:
 
