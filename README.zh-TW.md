@@ -1,19 +1,22 @@
-﻿# abyssal-walker
+# abyssal-walker
 
-[English](README.md) | [蝜?銝剜?](README.zh-TW.md)
+[English](README.md) | [繁體中文](README.zh-TW.md)
 
-`abyssal-walker` ?臭誑 Godot 4 鋆賭???2D ?? RPG ??嚗敹銵??嗥?憸券???勗儐?堆?
+`abyssal-walker` 是以 Godot 4 製作的動作 RPG 原型，核心圍繞在深淵探索、信標驅動的關卡循環，以及風險與回報的取捨。
 
-- ?典之撱單???- ?脣銝?渲???- ?圈洛?撖塚?瘙箏??臬?日
-- ???日?臬摨恬?憭望??仃?餅?湔?拙?
+- 在大廳準備裝備與配置
+- 選擇深淵信標，或使用最低循環的 `Baseline Dive`
+- 進入深淵戰鬥並推進深度
+- 收集戰利品與信標
+- 成功撤離後入庫，失敗則失去本場戰利品
 
-## ??汗
+## 遊玩預覽
 
 <p align="center">
   <img src="readme-assets/gameplay-main.gif" alt="Main Gameplay" width="860" />
 </p>
 
-## ?芸?
+## 截圖
 
 <p align="center">
   <img src="readme-assets/screenshot-combat.png" alt="Combat" width="31%" />
@@ -21,28 +24,52 @@
   <img src="readme-assets/screenshot-crafting.png" alt="Crafting" width="31%" />
 </p>
 
-## ?桀??拇?敺芰
+## 目前玩法循環
 
-1. ?脣 `Lobby`
-2. 閮剖? `Operation Level` ??`Lives`
-3. 敺澈?蔭?祆活銵?鋆?
-4. ?脣瘛望殿?圈洛銝行?脤??5. ?園??嚗???/ 銝餅??賢窄??/ 頛撖嗥 / 璅∠?嚗?6. ?豢??日?匱蝥??7. 蝣箄??砍蝯?敺??之撱?
-## ?詨?蝟餌絞
+1. 進入 `Lobby`
+2. 從信標庫存中選擇一張 `Abyss Beacon`
+3. 若沒有信標，仍可使用不消耗的 `Baseline Dive`
+4. 從倉庫配置本次行動裝載
+5. 進入深淵，依深度、危險值與信標詞綴推進
+6. 收集掉落物與新的信標
+7. 選擇撤離或繼續深入
+8. 結算後返回大廳
 
-- 銵????`operation_level`?danger`?lives`嚗?- 憸券撽????賢?鞈?- ?砍???啣??`run_backpack_loot`嚗?- ???澈?啣??`stash_loot`嚗?- ???澈??嚗stash_materials`嚗?- ?日/憭望?敺???蝣箄???蝞?蝔?- `data/*.json` 撽??批捆?蔭
+## 核心系統
 
-## ???萎?
+- 信標驅動的行動開局
+- 深度、基礎難度與 `danger` 組成的有效難度
+- 本場背包戰利品：`run_backpack_loot`
+- 持久化倉庫戰利品：`stash_loot`
+- 持久化倉庫材料：`stash_materials`
+- 信標掉落、消耗與庫存管理
+- 深淵尾王必掉信標、一般怪物低機率掉信標
+- 由 `data/*.json` 驅動的內容配置
 
-- `I`嚗????- `K`嚗??賡??- `C`嚗ˊ雿??- `M`嚗芋蝯??- `Z`嚗??餈???- `L`嚗????賜祟??- `E`嚗Ⅱ隤??/ 蝣箄?蝯?餈?
-- `F`嚗?Ｚ?蝒???匱蝥?- `N`嚗??唳摮仃??撅?- `Esc`嚗??
-## 銝餉??湔
+## 操作鍵位
 
-- 憭批輒嚗scenes/main/lobby.tscn`
-- ?圈洛嚗scenes/main/game.tscn`
+- `I`：裝備面板
+- `K`：技能面板
+- `C`：Crafting 面板
+- `M`：模組面板
+- `Z`：拾取附近掉落
+- `L`：切換掉落篩選
+- `E`：確認撤離 / 確認結算返回
+- `F`：在撤離視窗期間選擇繼續
+- `N`：挑戰暫存失敗樓層
+- `Esc`：暫停
 
-## 敹恍?憪?
-1. 摰? Godot 4.x
-2. ??Godot ???砍?獢??冗
-3. ?瑁?撠?嚗???舐 Lobby嚗?
-## ?蝝??
-隢???`CHANGELOG.md`??
+## 主要場景
+
+- 大廳：`scenes/main/lobby.tscn`
+- 戰鬥：`scenes/main/game.tscn`
+
+## 快速開始
+
+1. 安裝 Godot 4.x
+2. 用 Godot 開啟本專案資料夾
+3. 執行專案（入口場景為 `Lobby`）
+
+## 變更紀錄
+
+請參考 `CHANGELOG.md`。
