@@ -1,6 +1,8 @@
 class_name SkillLinkPanel
 extends Control
 
+const PLAYER_BUILD_FACADE := preload("res://scripts/core/player/player_build_facade.gd")
+
 ## 技能連結面板 - 顯示技能寶石與輔助寶石
 
 signal closed
@@ -12,9 +14,13 @@ signal navigate_to(panel_id: String)
 @onready var inventory_row: HBoxContainer = $PanelContainer/VBox/InventoryRow
 @onready var title_label: Label = $PanelContainer/VBox/Header/Title
 @onready var close_button: Button = $PanelContainer/VBox/Header/CloseButton
+@onready var skill_section_label: Label = $PanelContainer/VBox/SkillSection/Label
 @onready var skill_slot: Button = $PanelContainer/VBox/SkillSection/SkillSlot
+@onready var support_section_label: Label = $PanelContainer/VBox/SupportSection/Label
 @onready var support_grid: GridContainer = $PanelContainer/VBox/SupportSection/SupportGrid
+@onready var skill_inventory_label: Label = $PanelContainer/VBox/InventoryRow/SkillInventorySection/Label
 @onready var skill_inventory_grid: GridContainer = $PanelContainer/VBox/InventoryRow/SkillInventorySection/SkillInventoryScroll/SkillInventoryGrid
+@onready var support_inventory_label: Label = $PanelContainer/VBox/InventoryRow/SupportInventorySection/Label
 @onready var support_inventory_grid: GridContainer = $PanelContainer/VBox/InventoryRow/SupportInventorySection/SupportInventoryScroll/SupportInventoryGrid
 @onready var skill_inventory_scroll: ScrollContainer = $PanelContainer/VBox/InventoryRow/SkillInventorySection/SkillInventoryScroll
 @onready var support_inventory_scroll: ScrollContainer = $PanelContainer/VBox/InventoryRow/SupportInventorySection/SupportInventoryScroll
@@ -22,6 +28,7 @@ signal navigate_to(panel_id: String)
 @onready var tooltip_label: RichTextLabel = $ItemTooltip/MarginContainer/TooltipText
 
 var player: Player = null
+var build = null
 var support_buttons: Array[Button] = []
 var skill_inventory_buttons: Array[Button] = []
 var support_inventory_buttons: Array[Button] = []
@@ -31,6 +38,8 @@ var drag_source_type: String = ""
 var drag_source_index: int = -1
 var hover_target_type: String = ""
 var hover_target_index: int = -1
+var pause_tree_on_open: bool = true
+var allow_crafting_navigation: bool = true
 
 const SLOT_SIZE := Vector2(56, 56)
 const PANEL_HALF_SIZE := Vector2(450, 250)
@@ -44,6 +53,7 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_apply_visual_style()
 	_setup_nav_tabs()
+	_apply_localized_texts()
 	_setup_skill_slot()
 	_create_support_slots()
 	_create_skill_inventory_slots()
@@ -53,6 +63,8 @@ func _ready() -> void:
 		item_tooltip.top_level = true
 	hide_tooltip()
 	visible = false
+	if not LocalizationService.locale_changed.is_connected(_on_locale_changed):
+		LocalizationService.locale_changed.connect(_on_locale_changed)
 
 
 func _process(_delta: float) -> void:
@@ -77,7 +89,10 @@ func _setup_nav_tabs() -> void:
 
 	for tab in tabs:
 		var tab_id: String = str(tab["id"])
+		if tab_id == "crafting" and not allow_crafting_navigation:
+			continue
 		var btn := Button.new()
+		btn.name = "Nav_%s" % tab_id
 		btn.text = str(tab["label"])
 		_style_nav_button(btn, tab_id == "skill")
 		btn.pressed.connect(func() -> void:
@@ -163,23 +178,42 @@ func _input(event: InputEvent) -> void:
 		elif key_event.keycode == KEY_M:
 			navigate_to.emit("module")
 			get_viewport().set_input_as_handled()
-		elif key_event.keycode == KEY_C:
+		elif key_event.keycode == KEY_C and allow_crafting_navigation:
 			navigate_to.emit("crafting")
 			get_viewport().set_input_as_handled()
 
 
 func open(p: Player) -> void:
 	player = p
+	build = PLAYER_BUILD_FACADE.new(p)
+	_apply_localized_texts()
 	visible = true
 	refresh()
-	get_tree().paused = true
+	if pause_tree_on_open:
+		get_tree().paused = true
 
 
 func close() -> void:
 	visible = false
 	hide_tooltip()
-	get_tree().paused = false
+	player = null
+	build = null
+	if pause_tree_on_open:
+		get_tree().paused = false
 	closed.emit()
+
+
+func set_pause_tree_on_open(enabled: bool) -> void:
+	pause_tree_on_open = enabled
+
+
+func set_allow_crafting_navigation(enabled: bool) -> void:
+	allow_crafting_navigation = enabled
+	var nav := panel_vbox.get_node_or_null("NavTabs") if panel_vbox != null else null
+	if nav != null:
+		var crafting_button := nav.get_node_or_null("Nav_crafting") as Control
+		if crafting_button != null:
+			crafting_button.visible = enabled
 
 
 func refresh() -> void:
@@ -325,9 +359,9 @@ func _create_support_button(index: int) -> Button:
 
 
 func _refresh_skill() -> void:
-	var gem: SkillGem = player.gem_link.skill_gem
+	var gem: SkillGem = build.get_skill_gem()
 	if gem:
-		var compatible: bool = gem.can_use_with_weapon(player.get_weapon_type())
+		var compatible: bool = gem.can_use_with_weapon(build.get_weapon_type())
 		skill_slot.text = _format_gem_button_text(gem.display_name, gem.level)
 		if compatible:
 			skill_slot.add_theme_color_override("font_color", Color(0.6, 1.0, 0.6))
@@ -336,18 +370,18 @@ func _refresh_skill() -> void:
 			skill_slot.add_theme_color_override("font_color", Color(1.0, 0.45, 0.45))
 			skill_slot.modulate = Color(1.0, 0.7, 0.7)
 	else:
-		skill_slot.text = "空"
+		skill_slot.text = _t("ui.skill.empty", "Empty")
 		skill_slot.remove_theme_color_override("font_color")
 		skill_slot.modulate = Color.WHITE
 
 
 func _refresh_supports() -> void:
-	var skill_gem: SkillGem = player.gem_link.skill_gem
+	var skill_gem: SkillGem = build.get_skill_gem()
 	for i in range(support_buttons.size()):
 		var btn: Button = support_buttons[i]
 		var gem: SupportGem = null
-		if i < player.gem_link.support_gems.size():
-			gem = player.gem_link.support_gems[i]
+		if i < build.get_support_gem_count():
+			gem = build.get_support_gem(i)
 
 		if gem:
 			var compatible: bool = skill_gem != null and gem.can_support_skill(skill_gem)
@@ -359,13 +393,13 @@ func _refresh_supports() -> void:
 				btn.add_theme_color_override("font_color", Color(1.0, 0.45, 0.45))
 				btn.modulate = Color(1.0, 0.75, 0.75)
 		else:
-			btn.text = "空"
+			btn.text = _t("ui.skill.empty", "Empty")
 			btn.remove_theme_color_override("font_color")
 			btn.modulate = Color.WHITE
 
 
 func _refresh_skill_inventory() -> void:
-	var weapon_type := player.get_weapon_type()
+	var weapon_type: int = build.get_weapon_type()
 	for i in range(skill_inventory_buttons.size()):
 		var btn: Button = skill_inventory_buttons[i]
 		var gem: SkillGem = player.get_skill_gem_in_inventory(i)
@@ -384,7 +418,7 @@ func _refresh_skill_inventory() -> void:
 
 
 func _refresh_support_inventory() -> void:
-	var skill_gem: SkillGem = player.gem_link.skill_gem
+	var skill_gem: SkillGem = build.get_skill_gem()
 	for i in range(support_inventory_buttons.size()):
 		var btn: Button = support_inventory_buttons[i]
 		var gem: SupportGem = player.get_support_gem_in_inventory(i)
@@ -404,14 +438,14 @@ func _refresh_support_inventory() -> void:
 
 
 func _on_skill_slot_hovered() -> void:
-	var gem: SkillGem = player.gem_link.skill_gem
+	var gem: SkillGem = build.get_skill_gem()
 	if gem:
 		var tooltip := gem.get_tooltip()
-		if not gem.can_use_with_weapon(player.get_weapon_type()):
-			tooltip = "[color=#ff6666]⚠ 武器類型不符，技能無法生效！[/color]\n\n" + tooltip
+		if not gem.can_use_with_weapon(build.get_weapon_type()):
+			tooltip = "[color=#ff6666]%s[/color]\n\n%s" % [_t("ui.skill.incompatible_weapon", "This skill gem cannot be used with your current weapon."), tooltip]
 		show_tooltip(tooltip)
 	else:
-		show_tooltip("[color=gray]技能寶石（空）[/color]")
+		show_tooltip("[color=gray]%s[/color]" % _t("ui.skill.no_skill_equipped", "No skill gem equipped"))
 
 
 func _on_skill_slot_pressed() -> void:
@@ -423,17 +457,17 @@ func _on_skill_slot_pressed() -> void:
 
 func _on_support_slot_hovered(index: int) -> void:
 	var gem: SupportGem = null
-	if index < player.gem_link.support_gems.size():
-		gem = player.gem_link.support_gems[index]
+	if index < build.get_support_gem_count():
+		gem = build.get_support_gem(index)
 
 	if gem:
 		var tooltip := gem.get_tooltip()
-		var skill_gem: SkillGem = player.gem_link.skill_gem
+		var skill_gem: SkillGem = build.get_skill_gem()
 		if skill_gem == null or not gem.can_support_skill(skill_gem):
-			tooltip = "[color=#ff6666]⚠ 與當前技能標籤不符，效果無效！[/color]\n\n" + tooltip
+			tooltip = "[color=#ff6666]%s[/color]\n\n%s" % [_t("ui.skill.incompatible_support", "This support gem cannot support the current skill."), tooltip]
 		show_tooltip(tooltip)
 	else:
-		show_tooltip("[color=gray]輔助寶石（空）[/color]")
+		show_tooltip("[color=gray]%s[/color]" % _t("ui.skill.empty_support", "Empty support slot"))
 
 
 func _on_support_slot_pressed(index: int) -> void:
@@ -461,8 +495,8 @@ func _on_skill_inventory_hovered(index: int) -> void:
 	var gem: SkillGem = player.get_skill_gem_in_inventory(index)
 	if gem:
 		var tooltip := gem.get_tooltip()
-		if not gem.can_use_with_weapon(player.get_weapon_type()):
-			tooltip = "[color=#ff6666]⚠ 與當前武器類型不符[/color]\n\n" + tooltip
+		if not gem.can_use_with_weapon(build.get_weapon_type()):
+			tooltip = "[color=#ff6666]%s[/color]\n\n%s" % [_t("ui.skill.incompatible_weapon", "This skill gem cannot be used with your current weapon."), tooltip]
 		show_tooltip(tooltip)
 	else:
 		hide_tooltip()
@@ -472,11 +506,11 @@ func _on_support_inventory_hovered(index: int) -> void:
 	var gem: SupportGem = player.get_support_gem_in_inventory(index)
 	if gem:
 		var tooltip := gem.get_tooltip()
-		var skill_gem: SkillGem = player.gem_link.skill_gem
+		var skill_gem: SkillGem = build.get_skill_gem()
 		if skill_gem == null:
-			tooltip = "[color=#ffaa44]⚠ 尚未裝備技能寶石[/color]\n\n" + tooltip
+			tooltip = "[color=#ffaa44]%s[/color]\n\n%s" % [_t("ui.skill.equip_skill_first", "Equip a skill gem first."), tooltip]
 		elif not gem.can_support_skill(skill_gem):
-			tooltip = "[color=#ff6666]⚠ 與當前技能標籤不符[/color]\n\n" + tooltip
+			tooltip = "[color=#ff6666]%s[/color]\n\n%s" % [_t("ui.skill.incompatible_support", "This support gem cannot support the current skill."), tooltip]
 		show_tooltip(tooltip)
 	else:
 		hide_tooltip()
@@ -549,7 +583,7 @@ func _perform_drag(source_type: String, source_index: int, target_type: String, 
 	elif source_type == "support_slot" and target_type == "support_inv":
 		player.swap_support_with_inventory(source_index, target_index)
 	elif source_type == "support_slot" and target_type == "support_slot":
-		player.gem_link.swap_support_gems(source_index, target_index)
+		build.swap_support_slots(source_index, target_index)
 	elif source_type == "support_inv" and target_type == "support_inv":
 		player.swap_support_gem_inventory(source_index, target_index)
 
@@ -586,4 +620,47 @@ func hide_tooltip() -> void:
 
 func _format_gem_button_text(gem_name: String, level: int) -> String:
 	var short_name := gem_name.substr(0, 4) if gem_name.length() > 4 else gem_name
-	return "%s\nLv%d" % [short_name, level]
+	return _fmt("ui.skill.gem_button", {"name": short_name, "level": level}, "{name}\nLv{level}")
+
+
+func _on_locale_changed(_locale: String) -> void:
+	_apply_localized_texts()
+	if visible:
+		refresh()
+
+
+func _apply_localized_texts() -> void:
+	if title_label != null:
+		title_label.text = _t("ui.panel.skills", "Skills")
+	if skill_section_label != null:
+		skill_section_label.text = _t("ui.panel.skills", "Skills")
+	if support_section_label != null:
+		support_section_label.text = _t("ui.lobby.category.support_gems", "Support Gems")
+	if skill_inventory_label != null:
+		skill_inventory_label.text = _t("ui.lobby.category.skill_gems", "Skill Gems")
+	if support_inventory_label != null:
+		support_inventory_label.text = _t("ui.lobby.category.support_gems", "Support Gems")
+	var nav := panel_vbox.get_node_or_null("NavTabs") as HBoxContainer
+	if nav != null:
+		for tab in _nav_tabs():
+			var tab_id := str(tab.get("id", ""))
+			var button := nav.get_node_or_null("Nav_%s" % tab_id) as Button
+			if button != null:
+				button.text = _t(str(tab.get("label_key", "")), str(tab.get("fallback", tab_id)))
+
+
+func _nav_tabs() -> Array[Dictionary]:
+	return [
+		{"id": "equipment", "label_key": "ui.panel.equipment", "fallback": "Equipment"},
+		{"id": "module", "label_key": "ui.panel.modules", "fallback": "Modules"},
+		{"id": "skill", "label_key": "ui.panel.skills", "fallback": "Skills"},
+		{"id": "crafting", "label_key": "ui.panel.crafting", "fallback": "Crafting"},
+	]
+
+
+func _t(key: String, fallback: String) -> String:
+	return LocalizationService.text(key, fallback)
+
+
+func _fmt(key: String, replacements: Dictionary, fallback: String) -> String:
+	return LocalizationService.format(key, replacements, fallback)

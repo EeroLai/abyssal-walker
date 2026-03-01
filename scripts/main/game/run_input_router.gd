@@ -21,8 +21,6 @@ func handle_key_input(
 			return _toggle_panel(panel_toggle_handler, "equipment")
 		KEY_K:
 			return _toggle_panel(panel_toggle_handler, "skill")
-		KEY_C:
-			return _toggle_panel(panel_toggle_handler, "crafting")
 		KEY_M:
 			return _toggle_panel(panel_toggle_handler, "module")
 		KEY_Z:

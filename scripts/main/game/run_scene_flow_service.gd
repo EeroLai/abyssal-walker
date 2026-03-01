@@ -49,7 +49,7 @@ func prepare_for_lobby_return(player: Player) -> void:
 	run_summary_waiting_return = false
 	run_summary_return_confirmed = false
 	if player != null and is_instance_valid(player):
-		GameManager.resolve_operation_loadout_for_lobby(player)
+		player.clamp_health_to_max()
 
 
 func run_extraction_window(

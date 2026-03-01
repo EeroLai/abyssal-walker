@@ -178,10 +178,10 @@ color = Color(0.06, 0.14, 0.22, 0.35)
 
 [node name="RootPanel" type="PanelContainer" parent="."]
 layout_mode = 1
-anchor_left = 0.1
-anchor_top = 0.12
-anchor_right = 0.9
-anchor_bottom = 0.88
+anchor_left = 0.08
+anchor_top = 0.07
+anchor_right = 0.92
+anchor_bottom = 0.93
 grow_horizontal = 2
 grow_vertical = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_root_panel")
@@ -290,7 +290,7 @@ text = "Owned Beacons: 0"
 theme_override_colors/font_color = Color(0.55, 0.73, 0.88, 1)
 
 [node name="BeaconScroll" type="ScrollContainer" parent="RootPanel/Content/BeaconCard/BeaconCardBody"]
-custom_minimum_size = Vector2(0, 208)
+custom_minimum_size = Vector2(0, 180)
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_styles/panel = SubResource("StyleBoxFlat_list")
@@ -303,7 +303,7 @@ theme_override_constants/h_separation = 8
 theme_override_constants/v_separation = 8
 
 [node name="BeaconSummary" type="Label" parent="RootPanel/Content/BeaconCard/BeaconCardBody"]
-custom_minimum_size = Vector2(0, 156)
+custom_minimum_size = Vector2(0, 116)
 layout_mode = 2
 text = "Configured Beacon"
 autowrap_mode = 3
@@ -331,9 +331,9 @@ layout_mode = 2
 alignment = 1
 
 [node name="PrepToggleButton" type="Button" parent="RootPanel/Content/PrepToggleRow"]
-custom_minimum_size = Vector2(240, 36)
+custom_minimum_size = Vector2(220, 34)
 layout_mode = 2
-text = "Open Loadout Prep"
+text = "Open Build Prep"
 theme_override_styles/normal = SubResource("StyleBoxFlat_card")
 theme_override_styles/hover = SubResource("StyleBoxFlat_input")
 theme_override_styles/pressed = SubResource("StyleBoxFlat_input")
@@ -377,7 +377,7 @@ theme_override_constants/separation = 12
 [node name="PrepTitle" type="Label" parent="PrepOverlay/PrepPanel/PrepContent/PrepHeader"]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "Loadout Preparation"
+text = "Build Preparation"
 theme_override_colors/font_color = Color(0.88, 0.95, 1, 1)
 theme_override_font_sizes/font_size = 22
 
@@ -431,7 +431,7 @@ theme_override_colors/font_color = Color(0.83, 0.92, 1, 1)
 
 [node name="LoadoutTotalLabel" type="Label" parent="PrepOverlay/PrepPanel/PrepContent/SummaryRow/SummaryRight/SummaryRightBody"]
 layout_mode = 2
-text = "Loadout: Eq 0 | Skill 0 | Support 0 | Module 0"
+text = "Build: Eq 0 | Skill 0 | Support 0 | Module 0"
 theme_override_colors/font_color = Color(0.83, 0.92, 1, 1)
 
 [node name="LootRow" type="HBoxContainer" parent="PrepOverlay/PrepPanel/PrepContent"]
@@ -490,7 +490,15 @@ alignment = 1
 [node name="AddButton" type="Button" parent="PrepOverlay/PrepPanel/PrepContent/LootRow/ActionSide/ActionBody"]
 custom_minimum_size = Vector2(0, 38)
 layout_mode = 2
-text = "Move to Loadout >"
+text = "To Build >"
+theme_override_styles/normal = SubResource("StyleBoxFlat_button_primary")
+theme_override_styles/hover = SubResource("StyleBoxFlat_button_primary_hover")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_button_primary")
+
+[node name="QuickEquipButton" type="Button" parent="PrepOverlay/PrepPanel/PrepContent/LootRow/ActionSide/ActionBody"]
+custom_minimum_size = Vector2(0, 38)
+layout_mode = 2
+text = "Quick Equip >"
 theme_override_styles/normal = SubResource("StyleBoxFlat_button_primary")
 theme_override_styles/hover = SubResource("StyleBoxFlat_button_primary_hover")
 theme_override_styles/pressed = SubResource("StyleBoxFlat_button_primary")
@@ -506,7 +514,7 @@ theme_override_styles/pressed = SubResource("StyleBoxFlat_button_primary")
 [node name="ClearLoadoutButton" type="Button" parent="PrepOverlay/PrepPanel/PrepContent/LootRow/ActionSide/ActionBody"]
 custom_minimum_size = Vector2(0, 34)
 layout_mode = 2
-text = "Clear Loadout"
+text = "Clear Build"
 theme_override_styles/normal = SubResource("StyleBoxFlat_button_danger")
 theme_override_styles/hover = SubResource("StyleBoxFlat_button_danger_hover")
 theme_override_styles/pressed = SubResource("StyleBoxFlat_button_danger")
@@ -530,7 +538,7 @@ theme_override_constants/separation = 8
 
 [node name="LoadoutTitle" type="Label" parent="PrepOverlay/PrepPanel/PrepContent/LootRow/LoadoutSide/LoadoutBody"]
 layout_mode = 2
-text = "Operation Loadout"
+text = "Current Build"
 theme_override_colors/font_color = Color(0.86, 0.94, 1, 1)
 theme_override_font_sizes/font_size = 20
 
@@ -548,7 +556,29 @@ layout_mode = 2
 size_flags_vertical = 3
 theme_override_styles/panel = SubResource("StyleBoxFlat_list")
 
-[node name="LoadoutGrid" type="GridContainer" parent="PrepOverlay/PrepPanel/PrepContent/LootRow/LoadoutSide/LoadoutBody/LoadoutScroll"]
+[node name="LoadoutSections" type="VBoxContainer" parent="PrepOverlay/PrepPanel/PrepContent/LootRow/LoadoutSide/LoadoutBody/LoadoutScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="EquippedLabel" type="Label" parent="PrepOverlay/PrepPanel/PrepContent/LootRow/LoadoutSide/LoadoutBody/LoadoutScroll/LoadoutSections"]
+layout_mode = 2
+text = "Equipped"
+theme_override_colors/font_color = Color(0.94, 0.82, 0.58, 1)
+
+[node name="LoadoutEquippedGrid" type="GridContainer" parent="PrepOverlay/PrepPanel/PrepContent/LootRow/LoadoutSide/LoadoutBody/LoadoutScroll/LoadoutSections"]
+layout_mode = 2
+size_flags_horizontal = 3
+columns = 7
+theme_override_constants/h_separation = 6
+theme_override_constants/v_separation = 6
+
+[node name="InventoryLabel" type="Label" parent="PrepOverlay/PrepPanel/PrepContent/LootRow/LoadoutSide/LoadoutBody/LoadoutScroll/LoadoutSections"]
+layout_mode = 2
+text = "Build Inventory"
+theme_override_colors/font_color = Color(0.74, 0.86, 0.96, 1)
+
+[node name="LoadoutInventoryGrid" type="GridContainer" parent="PrepOverlay/PrepPanel/PrepContent/LootRow/LoadoutSide/LoadoutBody/LoadoutScroll/LoadoutSections"]
 layout_mode = 2
 size_flags_horizontal = 3
 columns = 7

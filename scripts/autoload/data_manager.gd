@@ -165,8 +165,23 @@ func get_affixes_for_slot(slot: StatTypes.EquipmentSlot, affix_type: StatTypes.A
 	return result
 
 
+const STARTER_EQUIPMENT_IDS: Array[String] = [
+	"iron_sword",
+	"iron_dagger",
+	"short_bow",
+	"apprentice_wand",
+	"wooden_talisman",
+	"iron_warmark",
+	"crystal_arcane",
+]
+
+
 func get_equipment_base(id: String) -> Dictionary:
 	return equipment_bases.get(id, {})
+
+
+func get_starter_equipment_ids() -> Array[String]:
+	return STARTER_EQUIPMENT_IDS.duplicate()
 
 
 func get_skill_gem_data(id: String) -> Dictionary:

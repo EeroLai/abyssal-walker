@@ -25,11 +25,13 @@ var extraction_prompt_label: Label = null
 var run_summary_panel: PanelContainer = null
 var run_summary_title: Label = null
 var run_summary_body: RichTextLabel = null
+var run_summary_footer: Label = null
 var progression_mode_label: Label = null
 var progression_primary_label: Label = null
 var progression_secondary_label: Label = null
 var progression_buttons: HBoxContainer = null
 var progression_panel: PanelContainer = null
+var progression_retry_button: Button = null
 var damage_vignette: Panel = null
 var _last_hp_value: float = -1.0
 var _damage_vignette_tween: Tween = null
@@ -48,9 +50,12 @@ func _ready() -> void:
 	_create_run_summary_panel()
 	_create_progression_labels()
 	_create_damage_vignette()
+	_apply_localized_texts()
 	_refresh_loot_filter_label()
 	_on_operation_session_changed(GameManager.get_operation_summary())
 	_connect_signals()
+	if not LocalizationService.locale_changed.is_connected(_on_locale_changed):
+		LocalizationService.locale_changed.connect(_on_locale_changed)
 
 
 func _process(_delta: float) -> void:
@@ -111,7 +116,7 @@ func _on_dps_updated(dps: float) -> void:
 func _on_kill_count_changed(count: int) -> void:
 	kills = count
 	if kills_label:
-		kills_label.text = "擊殺: %d" % kills
+		kills_label.text = _fmt("ui.hud.kills", {"count": kills}, "Kills: {count}")
 
 
 func _on_floor_entered(floor_number: int) -> void:
@@ -126,7 +131,7 @@ func bind_player(player_node: Player) -> void:
 
 func update_floor(floor_number: int) -> void:
 	if floor_label:
-		floor_label.text = "深淵 %d 層" % floor_number
+		floor_label.text = _fmt("ui.hud.floor", {"floor": floor_number}, "Abyss Floor {floor}")
 
 
 func set_progression_status(text: String) -> void:
@@ -152,7 +157,7 @@ func set_floor_choice_visible(is_visible: bool) -> void:
 
 func update_enemy_count(count: int) -> void:
 	if enemy_count_label:
-		enemy_count_label.text = "敵人: %d" % count
+		enemy_count_label.text = _fmt("ui.hud.enemy_count", {"count": count}, "Enemies: {count}")
 
 
 func _on_item_picked_up(_item_data: Variant) -> void:
@@ -164,7 +169,7 @@ func _on_item_picked_up(_item_data: Variant) -> void:
 
 func update_inventory(count: int) -> void:
 	if inventory_label:
-		inventory_label.text = "背包: %d/60" % count
+		inventory_label.text = _fmt("ui.hud.inventory", {"count": count}, "Inventory: {count}/60")
 
 
 func _on_status_applied(target: Node, status_type: String, stacks: int) -> void:
@@ -401,7 +406,7 @@ func _create_run_summary_panel() -> void:
 	run_summary_title = Label.new()
 	run_summary_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	run_summary_title.add_theme_font_size_override("font_size", 18)
-	run_summary_title.text = "Run Summary"
+	run_summary_title.text = _t("ui.hud.run_summary", "Run Summary")
 	vbox.add_child(run_summary_title)
 
 	run_summary_body = RichTextLabel.new()
@@ -412,11 +417,11 @@ func _create_run_summary_panel() -> void:
 	run_summary_body.text = ""
 	vbox.add_child(run_summary_body)
 
-	var footer := Label.new()
-	footer.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	footer.modulate = Color(0.95, 0.85, 0.65, 1.0)
-	footer.text = "Press [E] to return to Lobby"
-	vbox.add_child(footer)
+	run_summary_footer = Label.new()
+	run_summary_footer.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	run_summary_footer.modulate = Color(0.95, 0.85, 0.65, 1.0)
+	run_summary_footer.text = _t("ui.hud.return_lobby", "Press [E] to return to Lobby")
+	vbox.add_child(run_summary_footer)
 
 
 func _create_progression_labels() -> void:
@@ -454,7 +459,7 @@ func _create_progression_labels() -> void:
 
 	progression_mode_label = Label.new()
 	progression_mode_label.name = "ProgressionModeLabel"
-	progression_mode_label.text = "模式: 推進"
+	progression_mode_label.text = _t("ui.hud.progression_mode_push", "Mode: Push")
 	progression_mode_label.add_theme_font_size_override("font_size", 12)
 	progression_mode_label.modulate = Color(0.9, 0.84, 0.58, 0.98)
 	top_row.add_child(progression_mode_label)
@@ -481,11 +486,11 @@ func _create_progression_labels() -> void:
 	progression_buttons.add_theme_constant_override("separation", 6)
 	vbox.add_child(progression_buttons)
 
-	var btn_retry := Button.new()
-	btn_retry.text = "挑戰失敗層"
-	btn_retry.custom_minimum_size = Vector2(108, 22)
-	btn_retry.pressed.connect(func() -> void: challenge_failed_floor_requested.emit())
-	progression_buttons.add_child(btn_retry)
+	progression_retry_button = Button.new()
+	progression_retry_button.text = _t("ui.hud.retry_failed_floor", "Retry Failed Floor")
+	progression_retry_button.custom_minimum_size = Vector2(108, 22)
+	progression_retry_button.pressed.connect(func() -> void: challenge_failed_floor_requested.emit())
+	progression_buttons.add_child(progression_retry_button)
 
 
 func _on_loot_filter_changed(_mode: int) -> void:
@@ -500,17 +505,24 @@ func _on_operation_session_changed(summary: Dictionary) -> void:
 	var danger: int = int(summary.get("danger", 0))
 	var lives_left: int = int(summary.get("lives_left", 0))
 	var lives_max: int = int(summary.get("lives_max", 0))
-	operation_label.text = "Base Lv %d  Cap %d  Danger %d  Lives %d/%d" % [
-		base_difficulty,
-		max_depth,
-		danger,
-		lives_left,
-		lives_max,
-	]
+	operation_label.text = _fmt(
+		"ui.hud.operation",
+		{
+			"base": base_difficulty,
+			"cap": max_depth,
+			"danger": danger,
+			"lives_left": lives_left,
+			"lives_max": lives_max,
+		},
+		"Base Lv {base}  Cap {cap}  Danger {danger}  Lives {lives_left}/{lives_max}"
+	)
 
 
 func _on_extraction_window_opened(_floor_number: int, timeout_sec: float) -> void:
-	set_extraction_prompt(true, "[E] 撤離   [F] 繼續\n剩餘 %d 秒" % int(timeout_sec))
+	set_extraction_prompt(
+		true,
+		_fmt("ui.hud.extraction_prompt", {"seconds": int(timeout_sec)}, "[E] Extract   [F] Continue\n{seconds}s left")
+	)
 
 
 func _on_extraction_window_closed(_floor_number: int, _extracted: bool) -> void:
@@ -526,13 +538,17 @@ func _on_run_extracted(summary: Dictionary) -> void:
 	var moved_modules: int = int(moved.get("modules", 0))
 	_add_feed_entry(
 		"run_extracted",
-		"成功撤離：深淵 %d 層，入庫 裝%d/寶石%d/模組%d，材料倉庫 %d" % [
-			floor,
-			moved_equipment,
-			moved_gems,
-			moved_modules,
-			stash_total,
-		],
+		_fmt(
+			"ui.hud.run_extracted",
+			{
+				"floor": floor,
+				"equipment": moved_equipment,
+				"gems": moved_gems,
+				"modules": moved_modules,
+				"stash_total": stash_total,
+			},
+			"Extracted successfully: Floor {floor}, moved Eq {equipment}/Gems {gems}/Modules {modules}, stash materials {stash_total}"
+		),
 		1,
 		Color(0.7, 1.0, 0.72)
 	)
@@ -547,12 +563,16 @@ func _on_run_failed(summary: Dictionary) -> void:
 	var lost_modules: int = int(lost_loot.get("modules", 0))
 	_add_feed_entry(
 		"run_failed",
-		"行動失敗：失去戰利品 裝%d/寶石%d/模組%d（材料保留 %d）" % [
-			lost_equipment,
-			lost_gems,
-			lost_modules,
-			kept,
-		],
+		_fmt(
+			"ui.hud.run_failed",
+			{
+				"equipment": lost_equipment,
+				"gems": lost_gems,
+				"modules": lost_modules,
+				"kept": kept,
+			},
+			"Operation failed: Lost Eq {equipment}/Gems {gems}/Modules {modules} (materials kept {kept})"
+		),
 		1,
 		Color(1.0, 0.56, 0.56)
 	)
@@ -586,7 +606,7 @@ func is_run_summary_visible() -> bool:
 func _refresh_loot_filter_label() -> void:
 	if loot_filter_label == null:
 		return
-	loot_filter_label.text = "[L] 掉落過濾: %s" % GameManager.get_loot_filter_name()
+	loot_filter_label.text = _fmt("ui.hud.loot_filter", {"name": GameManager.get_loot_filter_name()}, "[L] Loot Filter: {name}")
 
 
 func _on_notification_requested(message: String, type: String) -> void:
@@ -648,22 +668,22 @@ func _add_feed_entry(key: String, text: String, increment: int, color: Color) ->
 func _pickup_text(item_data: Variant) -> String:
 	if item_data is EquipmentData:
 		var eq := item_data as EquipmentData
-		return "拾取裝備：%s" % eq.display_name
+		return _fmt("ui.hud.pickup_equipment", {"name": eq.display_name}, "Picked up Equipment: {name}")
 	if item_data is SkillGem:
 		var gem := item_data as SkillGem
-		return "拾取技能寶石：%s" % gem.display_name
+		return _fmt("ui.hud.pickup_skill", {"name": gem.display_name}, "Picked up Skill Gem: {name}")
 	if item_data is SupportGem:
 		var support := item_data as SupportGem
-		return "拾取輔助寶石：%s" % support.display_name
+		return _fmt("ui.hud.pickup_support", {"name": support.display_name}, "Picked up Support Gem: {name}")
 	if item_data is Module:
 		var mod := item_data as Module
-		return "拾取模組：%s" % mod.display_name
+		return _fmt("ui.hud.pickup_module", {"name": mod.display_name}, "Picked up Module: {name}")
 	if item_data is Dictionary:
 		var mat_id: String = str(item_data.get("material_id", ""))
 		if mat_id != "":
 			var mat_data: Dictionary = DataManager.get_crafting_material(mat_id)
 			var mat_name: String = str(mat_data.get("display_name", mat_id))
-			return "拾取材料：%s" % mat_name
+			return _fmt("ui.hud.pickup_material", {"name": mat_name}, "Picked up Material: {name}")
 	return ""
 
 
@@ -734,3 +754,38 @@ func _refresh_pickup_feed() -> void:
 		color.a = clampf(remaining / PICKUP_FADE_TIME, 0.0, 1.0) if remaining < PICKUP_FADE_TIME else 1.0
 		label.modulate = color
 		label.visible = true
+
+
+func _on_locale_changed(_locale: String) -> void:
+	_apply_localized_texts()
+	if tracked_player != null:
+		update_inventory(tracked_player.get_inventory_size())
+	_refresh_loot_filter_label()
+	_on_operation_session_changed(GameManager.get_operation_summary())
+
+
+func _apply_localized_texts() -> void:
+	if run_summary_title != null:
+		run_summary_title.text = _t("ui.hud.run_summary", "Run Summary")
+	if run_summary_footer != null:
+		run_summary_footer.text = _t("ui.hud.return_lobby", "Press [E] to return to Lobby")
+	if progression_mode_label != null and progression_mode_label.text.is_empty():
+		progression_mode_label.text = _t("ui.hud.progression_mode_push", "Mode: Push")
+	if progression_retry_button != null:
+		progression_retry_button.text = _t("ui.hud.retry_failed_floor", "Retry Failed Floor")
+	if floor_label != null and floor_label.text != "":
+		var floor_match := RegEx.new()
+		if floor_match.compile("(\\d+)") == OK:
+			var result := floor_match.search(floor_label.text)
+			if result != null:
+				update_floor(int(result.get_string(1)))
+	if kills_label != null:
+		_on_kill_count_changed(kills)
+
+
+func _t(key: String, fallback: String) -> String:
+	return LocalizationService.text(key, fallback)
+
+
+func _fmt(key: String, replacements: Dictionary, fallback: String) -> String:
+	return LocalizationService.format(key, replacements, fallback)

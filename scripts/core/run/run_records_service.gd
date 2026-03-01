@@ -18,6 +18,13 @@ func save_persistent_player_build_from_player(player: Player) -> void:
 	persistent_player_build = player.capture_build_snapshot()
 
 
+func save_persistent_player_build_snapshot(snapshot: Dictionary) -> void:
+	if snapshot.is_empty():
+		persistent_player_build = {}
+		return
+	persistent_player_build = snapshot.duplicate(true)
+
+
 func apply_persistent_player_build_to_player(player: Player) -> void:
 	if player == null:
 		return

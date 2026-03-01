@@ -10,6 +10,35 @@ This format is based on Keep a Changelog and uses simple sections:
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-03-01
+
+### Added
+- Lobby build editing flow with preview-player backed panels for:
+  - Equipment
+  - Skills
+  - Modules
+  - Crafting
+- Direct `stash -> build` and `Quick Equip` workflow in the lobby, removing the need to route gear setup through the old run loadout flow.
+- UI localization foundation with:
+  - `LocalizationService`
+  - `zh_TW` / `en` locale tables
+  - in-lobby language selector with saved preference
+
+### Changed
+- Crafting is now lobby-only and no longer available during abyss runs.
+- Crafting affix augmentation now resolves from equipment `item_level` instead of run `floor_level`, decoupling build editing from run state.
+- Lobby build presentation now separates:
+  - `Equipped`
+  - `Build Inventory`
+- Active build flow now centers on persistent build state instead of the old equipment/skill/module `operation_loadout` path.
+- Lobby UI text, build panels, HUD shell text, and beacon/lobby summaries now read through localization keys instead of hardcoded mixed-language labels.
+
+### Fixed
+- Fixed lobby startup instability caused by preview-player initialization interfering with the scene viewport.
+- Fixed missing starter gear/module cases when opening the lobby with older data or after the build-flow migration.
+- Fixed lobby visibility/readout issues where current build content could appear missing or ambiguous.
+- Reduced 1280x720 lobby layout overflow by tightening the main lobby layout and consolidating language controls into the build tools row.
+
 ## [2.3.1] - 2026-03-01
 
 ### Added

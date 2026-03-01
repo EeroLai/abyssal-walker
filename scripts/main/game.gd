@@ -415,7 +415,7 @@ func _change_scene_to_lobby_deferred() -> void:
 
 
 func _toggle_panel_by_id(panel_id: String) -> void:
-	_run_panel_coordinator.toggle(panel_id, player, _run_progression_service.current_floor)
+	_run_panel_coordinator.toggle(panel_id, player)
 
 
 func _pickup_all_items() -> void:
@@ -430,8 +430,4 @@ func _pickup_all_items() -> void:
 
 
 func _on_panel_navigate(panel_id: String) -> void:
-	_run_panel_coordinator.handle_navigation(
-		panel_id,
-		player,
-		_run_progression_service.current_floor
-	)
+	_run_panel_coordinator.handle_navigation(panel_id, player)

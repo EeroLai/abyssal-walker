@@ -123,6 +123,14 @@ func move_loadout_loot_to_stash(category: String, index: int) -> bool:
 	return _inventory_service.move_loadout_loot_to_stash(category, index)
 
 
+func take_stash_loot_item(category: String, index: int) -> Variant:
+	return _inventory_service.take_stash_loot_item(category, index)
+
+
+func add_loot_to_stash(item: Variant) -> bool:
+	return _inventory_service.add_loot_to_stash(item)
+
+
 func apply_operation_loadout_to_player(player: Player) -> void:
 	_inventory_service.apply_operation_loadout_to_player(player)
 
@@ -181,6 +189,10 @@ func apply_death_material_penalty(player: Player) -> Dictionary:
 
 func save_persistent_player_build_from_player(player: Player) -> void:
 	_run_records_service.save_persistent_player_build_from_player(player)
+
+
+func save_persistent_player_build_snapshot(snapshot: Dictionary) -> void:
+	_run_records_service.save_persistent_player_build_snapshot(snapshot)
 
 
 func apply_persistent_player_build_to_player(player: Player) -> void:

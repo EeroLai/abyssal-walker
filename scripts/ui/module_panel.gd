@@ -1,6 +1,8 @@
 class_name ModulePanel
 extends Control
 
+const PLAYER_BUILD_FACADE := preload("res://scripts/core/player/player_build_facade.gd")
+
 signal closed
 signal navigate_to(panel_id: String)
 
@@ -12,23 +14,34 @@ const SLOT_SIZE := Vector2(56, 56)
 const PANEL_HALF_SIZE := Vector2(450, 250)
 
 var player: Player = null
+var build = null
 
 var panel_vbox: VBoxContainer
+var title_label: Label
 var load_label: Label
 var board_grid: GridContainer
 var inventory_grid: GridContainer
 var stats_summary: RichTextLabel
+var board_title_label: Label
+var inventory_title_label: Label
+var stats_title_label: Label
+var hint_label: Label
 
 var board_buttons: Array[Button] = []
 var inventory_buttons: Array[Button] = []
 var item_tooltip: PanelContainer
 var tooltip_label: RichTextLabel
+var pause_tree_on_open: bool = true
+var allow_crafting_navigation: bool = true
 
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_build_ui()
+	_apply_localized_texts()
 	visible = false
+	if not LocalizationService.locale_changed.is_connected(_on_locale_changed):
+		LocalizationService.locale_changed.connect(_on_locale_changed)
 
 
 func _build_ui() -> void:
@@ -68,15 +81,15 @@ func _build_ui() -> void:
 	var header := HBoxContainer.new()
 	panel_vbox.add_child(header)
 
-	var title := Label.new()
-	title.text = "模組"
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	title.add_theme_font_size_override("font_size", 15)
-	header.add_child(title)
+	title_label = Label.new()
+	title_label.text = _t("ui.module.title", "Modules")
+	title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	title_label.add_theme_font_size_override("font_size", 15)
+	header.add_child(title_label)
 
 	load_label = Label.new()
-	load_label.text = "負載: 0 / 100"
+	load_label.text = _fmt("ui.module.load", {"used": 0, "max": 100}, "Load: {used} / {max}")
 	load_label.add_theme_color_override("font_color", Color(0.7, 0.9, 0.7))
 	header.add_child(load_label)
 
@@ -99,10 +112,10 @@ func _build_ui() -> void:
 	board_side.add_theme_constant_override("separation", 8)
 	body.add_child(board_side)
 
-	var board_title := Label.new()
-	board_title.text = "核心板"
-	board_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	board_side.add_child(board_title)
+	board_title_label = Label.new()
+	board_title_label.text = _t("ui.module.core_board", "Core Board")
+	board_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	board_side.add_child(board_title_label)
 
 	board_grid = GridContainer.new()
 	board_grid.columns = 4
@@ -110,10 +123,10 @@ func _build_ui() -> void:
 	board_grid.add_theme_constant_override("v_separation", 6)
 	board_side.add_child(board_grid)
 
-	var inventory_title := Label.new()
-	inventory_title.text = "模組背包"
-	inventory_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	board_side.add_child(inventory_title)
+	inventory_title_label = Label.new()
+	inventory_title_label.text = _t("ui.module.inventory", "Module Inventory")
+	inventory_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	board_side.add_child(inventory_title_label)
 
 	var inv_scroll := ScrollContainer.new()
 	inv_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -133,10 +146,10 @@ func _build_ui() -> void:
 	stats_side.add_theme_constant_override("separation", 8)
 	body.add_child(stats_side)
 
-	var stats_title := Label.new()
-	stats_title.text = "角色總屬性"
-	stats_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	stats_side.add_child(stats_title)
+	stats_title_label = Label.new()
+	stats_title_label.text = _t("ui.module.stats", "Character Stats")
+	stats_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	stats_side.add_child(stats_title_label)
 
 	stats_summary = RichTextLabel.new()
 	stats_summary.bbcode_enabled = true
@@ -148,11 +161,11 @@ func _build_ui() -> void:
 	var footer := HBoxContainer.new()
 	panel_vbox.add_child(footer)
 
-	var hint := Label.new()
-	hint.text = "點擊背包裝上 | 點擊核心板卸下 | M/ESC 關閉"
-	hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	footer.add_child(hint)
+	hint_label = Label.new()
+	hint_label.text = _t("ui.module.hint", "Click inventory to equip | Click board to unequip | M/ESC close")
+	hint_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	footer.add_child(hint_label)
 
 	_create_board_slots()
 	_create_inventory_slots()
@@ -173,7 +186,10 @@ func _setup_nav_tabs() -> void:
 
 	for tab in tabs:
 		var tab_id: String = str(tab["id"])
+		if tab_id == "crafting" and not allow_crafting_navigation:
+			continue
 		var btn := Button.new()
+		btn.name = "Nav_%s" % tab_id
 		btn.text = str(tab["label"])
 		_style_nav_button(btn, tab_id == "module")
 		btn.pressed.connect(func() -> void:
@@ -274,22 +290,41 @@ func _input(event: InputEvent) -> void:
 		elif key_event.keycode == KEY_K:
 			navigate_to.emit("skill")
 			get_viewport().set_input_as_handled()
-		elif key_event.keycode == KEY_C:
+		elif key_event.keycode == KEY_C and allow_crafting_navigation:
 			navigate_to.emit("crafting")
 			get_viewport().set_input_as_handled()
 
 
 func open(p: Player) -> void:
 	player = p
+	build = PLAYER_BUILD_FACADE.new(p)
+	_apply_localized_texts()
 	visible = true
 	refresh()
-	get_tree().paused = true
+	if pause_tree_on_open:
+		get_tree().paused = true
 
 
 func close() -> void:
 	visible = false
-	get_tree().paused = false
+	player = null
+	build = null
+	if pause_tree_on_open:
+		get_tree().paused = false
 	closed.emit()
+
+
+func set_pause_tree_on_open(enabled: bool) -> void:
+	pause_tree_on_open = enabled
+
+
+func set_allow_crafting_navigation(enabled: bool) -> void:
+	allow_crafting_navigation = enabled
+	var nav := panel_vbox.get_node_or_null("NavTabs") if panel_vbox != null else null
+	if nav != null:
+		var crafting_button := nav.get_node_or_null("Nav_crafting") as Control
+		if crafting_button != null:
+			crafting_button.visible = enabled
 
 
 func refresh() -> void:
@@ -305,17 +340,17 @@ func _refresh_board() -> void:
 	for i in range(board_buttons.size()):
 		var btn := board_buttons[i]
 		var module: Module = null
-		if i < player.core_board.slots.size():
-			module = player.core_board.slots[i]
-		_set_module_button(btn, module, "空槽")
+		if build != null:
+			module = build.get_board_module(i)
+		_set_module_button(btn, module, _t("ui.module.empty_slot", "Empty"))
 
 
 func _refresh_inventory() -> void:
 	for i in range(inventory_buttons.size()):
 		var btn := inventory_buttons[i]
 		var module: Module = null
-		if i < player.module_inventory.size():
-			module = player.module_inventory[i]
+		if build != null:
+			module = build.get_inventory_module(i)
 		_set_module_button(btn, module, "")
 
 
@@ -324,7 +359,7 @@ func _set_module_button(btn: Button, module: Module, empty_text: String) -> void
 		btn.text = empty_text
 		btn.remove_theme_color_override("font_color")
 		return
-	btn.text = "%s\n負載%d" % [module.display_name.substr(0, 4), module.load_cost]
+	btn.text = "%s\n%s%d" % [module.display_name.substr(0, 4), _t("common.load", "Load"), module.load_cost]
 	btn.add_theme_color_override("font_color", module.get_type_color())
 
 
@@ -332,20 +367,20 @@ func _on_board_slot_hovered(index: int) -> void:
 	if player == null:
 		return
 	var module: Module = null
-	if index < player.core_board.slots.size():
-		module = player.core_board.slots[index]
+	if build != null:
+		module = build.get_board_module(index)
 	if module:
 		show_tooltip(_build_module_tooltip(module))
 	else:
-		show_tooltip("[color=gray]核心板空槽[/color]")
+		show_tooltip("[color=gray]%s[/color]" % _t("ui.module.tooltip_empty", "Empty module slot"))
 
 
 func _on_inventory_slot_hovered(index: int) -> void:
 	if player == null:
 		return
 	var module: Module = null
-	if index < player.module_inventory.size():
-		module = player.module_inventory[index]
+	if build != null:
+		module = build.get_inventory_module(index)
 	if module:
 		show_tooltip(_build_module_tooltip(module))
 	else:
@@ -355,7 +390,7 @@ func _on_inventory_slot_hovered(index: int) -> void:
 func _build_module_tooltip(module: Module) -> String:
 	var lines: Array[String] = []
 	lines.append("[color=#%s][b]%s[/b][/color]" % [module.get_type_color().to_html(false), module.display_name])
-	lines.append("[color=gray]%s | 負載 %d[/color]" % [module.get_type_name(), module.load_cost])
+	lines.append("[color=gray]%s[/color]" % _fmt("ui.module.tooltip_line", {"type": module.get_type_name(), "load": module.load_cost}, "{type} | Load {load}"))
 	if module.description != "":
 		lines.append("")
 		lines.append(module.description)
@@ -430,23 +465,51 @@ func _position_tooltip() -> void:
 
 
 func _refresh_load() -> void:
-	load_label.text = "負載: %d / %d" % [player.core_board.get_used_load(), CoreBoard.LOAD_CAPACITY]
+	load_label.text = _fmt(
+		"ui.module.load",
+		{"used": build.get_used_module_load(), "max": CoreBoard.LOAD_CAPACITY},
+		"Load: {used} / {max}"
+	)
+
+
+func _refresh_load_unused() -> void:
+	load_label.text = _fmt(
+		"ui.module.load",
+		{"used": player.core_board.get_used_load(), "max": CoreBoard.LOAD_CAPACITY},
+		"Load: {used} / {max}"
+	)
 
 
 func _refresh_stats_summary() -> void:
+	if build == null or not build.is_ready():
+		return
+	var lines: Array[String] = []
+	lines.append("")
+	lines.append("%s: %d" % [_t("ui.stat.hp", "HP"), int(round(build.get_stat_value(StatTypes.Stat.HP)))])
+	lines.append("%s: %d" % [_t("ui.stat.atk", "Attack"), int(round(build.get_stat_value(StatTypes.Stat.ATK)))])
+	lines.append("%s: %d" % [_t("ui.stat.def", "Defense"), int(round(build.get_stat_value(StatTypes.Stat.DEF)))])
+	lines.append("%s: %.2f" % [_t("ui.stat.attack_speed", "Attack Speed"), build.get_stat_value(StatTypes.Stat.ATK_SPEED)])
+	lines.append("%s: %.0f" % [_t("ui.stat.move_speed", "Move Speed"), build.get_stat_value(StatTypes.Stat.MOVE_SPEED)])
+	lines.append("%s: %.1f%%" % [_t("ui.stat.crit_rate", "Crit Rate"), build.get_stat_value(StatTypes.Stat.CRIT_RATE) * 100.0])
+	lines.append("%s: %.1f%%" % [_t("ui.stat.block_rate", "Block Rate"), build.get_stat_value(StatTypes.Stat.BLOCK_RATE) * 100.0])
+	lines.append("%s: %.1f%%" % [_t("ui.stat.dodge", "Dodge"), build.get_stat_value(StatTypes.Stat.DODGE) * 100.0])
+	stats_summary.text = "\n".join(lines)
+
+
+func _refresh_stats_summary_unused() -> void:
 	if player.stats == null:
 		return
 	var s: StatContainer = player.stats
 	var lines: Array[String] = []
 	lines.append("")
-	lines.append("生命值   : %d" % int(round(s.get_stat(StatTypes.Stat.HP))))
-	lines.append("攻擊力   : %d" % int(round(s.get_stat(StatTypes.Stat.ATK))))
-	lines.append("防禦力   : %d" % int(round(s.get_stat(StatTypes.Stat.DEF))))
-	lines.append("攻速     : %.2f" % s.get_stat(StatTypes.Stat.ATK_SPEED))
-	lines.append("移速     : %.0f" % s.get_stat(StatTypes.Stat.MOVE_SPEED))
-	lines.append("暴擊率   : %.1f%%" % (s.get_stat(StatTypes.Stat.CRIT_RATE) * 100.0))
-	lines.append("格擋率   : %.1f%%" % (s.get_stat(StatTypes.Stat.BLOCK_RATE) * 100.0))
-	lines.append("閃避率   : %.1f%%" % (s.get_stat(StatTypes.Stat.DODGE) * 100.0))
+	lines.append("%s: %d" % [_t("ui.stat.hp", "HP"), int(round(s.get_stat(StatTypes.Stat.HP)))])
+	lines.append("%s: %d" % [_t("ui.stat.atk", "Attack"), int(round(s.get_stat(StatTypes.Stat.ATK)))])
+	lines.append("%s: %d" % [_t("ui.stat.def", "Defense"), int(round(s.get_stat(StatTypes.Stat.DEF)))])
+	lines.append("%s: %.2f" % [_t("ui.stat.attack_speed", "Attack Speed"), s.get_stat(StatTypes.Stat.ATK_SPEED)])
+	lines.append("%s: %.0f" % [_t("ui.stat.move_speed", "Move Speed"), s.get_stat(StatTypes.Stat.MOVE_SPEED)])
+	lines.append("%s: %.1f%%" % [_t("ui.stat.crit_rate", "Crit Rate"), s.get_stat(StatTypes.Stat.CRIT_RATE) * 100.0])
+	lines.append("%s: %.1f%%" % [_t("ui.stat.block_rate", "Block Rate"), s.get_stat(StatTypes.Stat.BLOCK_RATE) * 100.0])
+	lines.append("%s: %.1f%%" % [_t("ui.stat.dodge", "Dodge"), s.get_stat(StatTypes.Stat.DODGE) * 100.0])
 	stats_summary.text = "\n".join(lines)
 
 
@@ -462,3 +525,46 @@ func _on_inventory_slot_pressed(index: int) -> void:
 		return
 	if player.equip_module_from_inventory(index):
 		refresh()
+
+
+func _on_locale_changed(_locale: String) -> void:
+	_apply_localized_texts()
+	if visible:
+		refresh()
+
+
+func _apply_localized_texts() -> void:
+	if title_label != null:
+		title_label.text = _t("ui.module.title", "Modules")
+	if board_title_label != null:
+		board_title_label.text = _t("ui.module.core_board", "Core Board")
+	if inventory_title_label != null:
+		inventory_title_label.text = _t("ui.module.inventory", "Module Inventory")
+	if stats_title_label != null:
+		stats_title_label.text = _t("ui.module.stats", "Character Stats")
+	if hint_label != null:
+		hint_label.text = _t("ui.module.hint", "Click inventory to equip | Click board to unequip | M/ESC close")
+	var nav := panel_vbox.get_node_or_null("NavTabs") as HBoxContainer
+	if nav != null:
+		for tab in _nav_tabs():
+			var tab_id := str(tab.get("id", ""))
+			var button := nav.get_node_or_null("Nav_%s" % tab_id) as Button
+			if button != null:
+				button.text = _t(str(tab.get("label_key", "")), str(tab.get("fallback", tab_id)))
+
+
+func _nav_tabs() -> Array[Dictionary]:
+	return [
+		{"id": "equipment", "label_key": "ui.panel.equipment", "fallback": "Equipment"},
+		{"id": "module", "label_key": "ui.panel.modules", "fallback": "Modules"},
+		{"id": "skill", "label_key": "ui.panel.skills", "fallback": "Skills"},
+		{"id": "crafting", "label_key": "ui.panel.crafting", "fallback": "Crafting"},
+	]
+
+
+func _t(key: String, fallback: String) -> String:
+	return LocalizationService.text(key, fallback)
+
+
+func _fmt(key: String, replacements: Dictionary, fallback: String) -> String:
+	return LocalizationService.format(key, replacements, fallback)

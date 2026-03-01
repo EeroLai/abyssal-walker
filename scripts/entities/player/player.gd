@@ -57,13 +57,24 @@ var current_target: Node2D = null
 
 
 func _ready() -> void:
-	_initialize_stats()
-	_initialize_gem_link()
-	_setup_ai()
-	_connect_signals()
+	ensure_runtime_initialized()
 
 	current_hp = stats.get_stat(StatTypes.Stat.HP)
 	_emit_health_changed()
+
+
+func ensure_build_state_initialized() -> void:
+	if stats == null:
+		_initialize_stats()
+	if gem_link == null:
+		_initialize_gem_link()
+
+
+func ensure_runtime_initialized() -> void:
+	ensure_build_state_initialized()
+	if ai == null or not is_instance_valid(ai):
+		_setup_ai()
+	_connect_signals()
 
 
 func _initialize_stats() -> void:
@@ -88,10 +99,14 @@ func _setup_ai() -> void:
 
 func _connect_signals() -> void:
 	if pickup_area:
-		pickup_area.area_entered.connect(_on_pickup_area_entered)
+		var pickup_handler := Callable(self, "_on_pickup_area_entered")
+		if not pickup_area.area_entered.is_connected(pickup_handler):
+			pickup_area.area_entered.connect(pickup_handler)
 
 	if attack_timer:
-		attack_timer.timeout.connect(_on_attack_timer_timeout)
+		var attack_handler := Callable(self, "_on_attack_timer_timeout")
+		if not attack_timer.timeout.is_connected(attack_handler):
+			attack_timer.timeout.connect(attack_handler)
 
 
 func _physics_process(delta: float) -> void:
@@ -326,6 +341,15 @@ func equip_skill_from_inventory(index: int) -> bool:
 	return true
 
 
+func equip_skill_gem_direct(gem: SkillGem) -> SkillGem:
+	if gem == null or gem_link == null:
+		return null
+	var old := gem_link.skill_gem
+	gem_link.set_skill_gem(gem)
+	_emit_event_bus("skill_gem_changed", [old, gem])
+	return old
+
+
 func unequip_skill_to_inventory() -> bool:
 	if gem_link.skill_gem == null:
 		return false
@@ -351,6 +375,17 @@ func equip_support_from_inventory(index: int) -> bool:
 	if slot_index >= 0:
 		_emit_event_bus("support_gem_changed", [slot_index, null, gem])
 	return true
+
+
+func equip_support_gem_direct(gem: SupportGem) -> int:
+	if gem == null or gem_link == null:
+		return -1
+	if not gem_link.add_support_gem(gem):
+		return -1
+	var slot_index := gem_link.support_gems.find(gem)
+	if slot_index >= 0:
+		_emit_event_bus("support_gem_changed", [slot_index, null, gem])
+	return slot_index
 
 
 func unequip_support_to_inventory(index: int) -> bool:
@@ -1319,6 +1354,17 @@ func equip_module_from_inventory(index: int) -> bool:
 	return true
 
 
+func equip_module_direct(module: Module) -> int:
+	if module == null or core_board == null or stats == null:
+		return -1
+	if not core_board.equip(module, stats):
+		return -1
+	var slot_index := core_board.slots.find(module)
+	if slot_index >= 0:
+		_emit_event_bus("module_changed", [slot_index, null, module])
+	return slot_index
+
+
 func unequip_module_to_inventory(slot_index: int) -> bool:
 	if slot_index < 0 or slot_index >= core_board.slots.size():
 		return false
@@ -1340,6 +1386,19 @@ func has_equipment_in_inventory(item: EquipmentData) -> bool:
 		return false
 	for inv_item in inventory:
 		if inv_item == item:
+			return true
+	return false
+
+
+func has_equipment_with_id(id: String) -> bool:
+	if id == "":
+		return false
+	for slot_id in EQUIPMENT_SLOT_ORDER:
+		var equipped_item: EquipmentData = get_equipped(slot_id)
+		if equipped_item != null and equipped_item.id == id:
+			return true
+	for inv_item in inventory:
+		if inv_item != null and inv_item.id == id:
 			return true
 	return false
 
@@ -1422,6 +1481,19 @@ func has_module_in_inventory(item: Module) -> bool:
 		return false
 	for mod in module_inventory:
 		if mod == item:
+			return true
+	return false
+
+
+func has_module_with_id(id: String) -> bool:
+	if id == "":
+		return false
+	if core_board != null:
+		for mod in core_board.slots:
+			if mod != null and mod.id == id:
+				return true
+	for mod in module_inventory:
+		if mod != null and mod.id == id:
 			return true
 	return false
 
@@ -1608,14 +1680,22 @@ func _set_stash_material_count(material_id: String, count: int) -> void:
 
 
 func _get_event_bus() -> Variant:
-	var tree := get_tree()
+	var tree: SceneTree = null
+	if is_inside_tree():
+		tree = get_tree()
+	else:
+		tree = Engine.get_main_loop() as SceneTree
 	if tree == null or tree.root == null:
 		return null
 	return tree.root.get_node_or_null(^"/root/EventBus")
 
 
 func _get_game_manager() -> Variant:
-	var tree := get_tree()
+	var tree: SceneTree = null
+	if is_inside_tree():
+		tree = get_tree()
+	else:
+		tree = Engine.get_main_loop() as SceneTree
 	if tree == null or tree.root == null:
 		return null
 	return tree.root.get_node_or_null(^"/root/GameManager")

@@ -32,9 +32,16 @@ func refresh_stash_entries(category: String, prep_service: LobbyPrepService) -> 
 
 func refresh_loadout_entries(category: String, prep_service: LobbyPrepService) -> Array:
 	loadout_entries.clear()
-	var items: Array = prep_service.get_loadout_items(category)
-	for i in range(items.size()):
-		loadout_entries.append({"category": category, "index": i})
+	var entry_models: Array = prep_service.get_loadout_entry_models(category)
+	var items: Array = []
+	for i in range(entry_models.size()):
+		var entry: Dictionary = entry_models[i]
+		loadout_entries.append({
+			"category": category,
+			"index": i,
+			"source": str(entry.get("source", "inventory")),
+		})
+		items.append(entry.get("item", null))
 	if selected_loadout_index >= loadout_entries.size():
 		selected_loadout_index = -1
 	return items

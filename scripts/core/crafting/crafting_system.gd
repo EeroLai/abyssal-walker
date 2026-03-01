@@ -10,8 +10,7 @@ const BASE_COSTS := {
 
 static func apply_material(
 	equipment: EquipmentData,
-	material_id: String,
-	floor_level: int
+	material_id: String
 ) -> bool:
 	if equipment == null:
 		return false
@@ -23,7 +22,7 @@ static func apply_material(
 		"alter":
 			success = _reroll_one_affix_values(equipment)
 		"augment":
-			success = ItemGenerator.add_random_affix(equipment, floor_level)
+			success = ItemGenerator.add_random_affix_for_item_level(equipment, equipment.item_level)
 		"refine":
 			success = _enhance_one_affix_values(equipment)
 		_:

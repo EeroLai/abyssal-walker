@@ -1,6 +1,8 @@
 class_name EquipmentPanel
 extends Control
 
+const PLAYER_BUILD_FACADE := preload("res://scripts/core/player/player_build_facade.gd")
+
 ## 裝備面板 - 顯示裝備欄位和背包
 
 signal closed
@@ -18,9 +20,12 @@ var item_tooltip: PanelContainer = null
 var tooltip_label: RichTextLabel = null
 
 var player: Player = null
+var build = null
 var equipment_slots: Dictionary = {}  # EquipmentSlot -> Button
 var inventory_buttons: Array[Button] = []
 var _last_alt_pressed: bool = false
+var pause_tree_on_open: bool = true
+var allow_crafting_navigation: bool = true
 
 const SLOT_SIZE := Vector2(48, 48)
 const PANEL_HALF_SIZE := Vector2(450, 250)
@@ -35,10 +40,13 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_apply_visual_style()
 	_setup_nav_tabs()
+	_apply_localized_texts()
 	_create_equipment_slots()
 	_create_inventory_slots()
 	_create_tooltip()
 	visible = false
+	if not LocalizationService.locale_changed.is_connected(_on_locale_changed):
+		LocalizationService.locale_changed.connect(_on_locale_changed)
 
 
 func _setup_nav_tabs() -> void:
@@ -58,7 +66,10 @@ func _setup_nav_tabs() -> void:
 
 	for tab in tabs:
 		var tab_id: String = str(tab["id"])
+		if tab_id == "crafting" and not allow_crafting_navigation:
+			continue
 		var btn := Button.new()
+		btn.name = "Nav_%s" % tab_id
 		btn.text = str(tab["label"])
 		_style_nav_button(btn, tab_id == "equipment")
 		btn.pressed.connect(func() -> void:
@@ -146,28 +157,47 @@ func _input(event: InputEvent) -> void:
 		elif key_event.keycode == KEY_K:
 			navigate_to.emit("skill")
 			get_viewport().set_input_as_handled()
-		elif key_event.keycode == KEY_C:
+		elif key_event.keycode == KEY_C and allow_crafting_navigation:
 			navigate_to.emit("crafting")
 			get_viewport().set_input_as_handled()
 
 
 func open(p: Player) -> void:
 	player = p
+	build = PLAYER_BUILD_FACADE.new(p)
+	_apply_localized_texts()
 	visible = true
 	refresh()
 	# 暫停遊戲
-	get_tree().paused = true
+	if pause_tree_on_open:
+		get_tree().paused = true
 
 
 func close() -> void:
 	visible = false
 	hide_tooltip()
-	get_tree().paused = false
+	player = null
+	build = null
+	if pause_tree_on_open:
+		get_tree().paused = false
 	closed.emit()
 
 
+func set_pause_tree_on_open(enabled: bool) -> void:
+	pause_tree_on_open = enabled
+
+
+func set_allow_crafting_navigation(enabled: bool) -> void:
+	allow_crafting_navigation = enabled
+	var nav := panel_vbox.get_node_or_null("NavTabs") if panel_vbox != null else null
+	if nav != null:
+		var crafting_button := nav.get_node_or_null("Nav_crafting") as Control
+		if crafting_button != null:
+			crafting_button.visible = enabled
+
+
 func refresh() -> void:
-	if player == null:
+	if build == null or not build.is_ready():
 		return
 	_refresh_equipment()
 	_refresh_inventory()
@@ -207,7 +237,7 @@ func _create_slot_button(slot: StatTypes.EquipmentSlot) -> Button:
 	var btn := Button.new()
 	btn.custom_minimum_size = SLOT_SIZE
 	btn.text = ""
-	btn.tooltip_text = StatTypes.SLOT_NAMES.get(slot, "未知")
+	btn.tooltip_text = StatTypes.SLOT_NAMES.get(slot, _t("common.unknown", "Unknown"))
 
 	# 設定按鈕樣式
 	var style := StyleBoxFlat.new()
@@ -272,7 +302,7 @@ func _create_inventory_button(index: int) -> Button:
 func _refresh_equipment() -> void:
 	for slot in equipment_slots.keys():
 		var btn: Button = equipment_slots[slot]
-		var item: EquipmentData = player.get_equipped(slot)
+		var item: EquipmentData = build.get_equipped(slot)
 
 		if item:
 			btn.text = item.display_name.substr(0, 2)
@@ -288,7 +318,7 @@ func _refresh_equipment() -> void:
 func _refresh_inventory() -> void:
 	for i in range(inventory_buttons.size()):
 		var btn: Button = inventory_buttons[i]
-		var item: EquipmentData = player.get_inventory_item(i)
+		var item: EquipmentData = build.get_inventory_item(i)
 
 		if item:
 			btn.text = item.display_name.substr(0, 2)
@@ -399,7 +429,7 @@ func show_empty_slot_tooltip(slot: StatTypes.EquipmentSlot) -> void:
 		return
 
 	var slot_name: String = StatTypes.SLOT_NAMES.get(slot, "")
-	tooltip_label.text = "[color=gray]%s\n空槽[/color]" % slot_name
+	tooltip_label.text = "[color=gray]%s\n%s[/color]" % [slot_name, _t("ui.equipment.empty_slot", "Empty Slot")]
 	tooltip_label.reset_size()
 	item_tooltip.reset_size()
 	item_tooltip.visible = true
@@ -441,34 +471,74 @@ func _create_tooltip() -> void:
 
 
 func _refresh_stats_summary() -> void:
-	if player == null or player.stats == null or stats_summary_label == null:
+	if build == null or not build.is_ready() or stats_summary_label == null:
+		return
+	var lines: Array[String] = []
+	lines.append("%s: %d" % [_t("ui.stat.hp", "HP"), int(round(build.get_stat_value(StatTypes.Stat.HP)))])
+	lines.append("%s: %d" % [_t("ui.stat.atk", "Attack"), int(round(build.get_stat_value(StatTypes.Stat.ATK)))])
+	lines.append("%s: %d" % [_t("ui.stat.def", "Defense"), int(round(build.get_stat_value(StatTypes.Stat.DEF)))])
+	lines.append("%s: %.2f" % [_t("ui.stat.attack_speed", "Attack Speed"), build.get_stat_value(StatTypes.Stat.ATK_SPEED)])
+	lines.append("%s: %.0f" % [_t("ui.stat.move_speed", "Move Speed"), build.get_stat_value(StatTypes.Stat.MOVE_SPEED)])
+	lines.append("%s: %.1f%%" % [_t("ui.stat.crit_rate", "Crit Rate"), build.get_stat_value(StatTypes.Stat.CRIT_RATE) * 100.0])
+	lines.append("%s: %.1f%%" % [_t("ui.stat.crit_damage", "Crit Damage"), build.get_stat_value(StatTypes.Stat.CRIT_DMG) * 100.0])
+	lines.append("%s: %.1f%%" % [_t("ui.stat.final_damage", "Final Damage"), build.get_stat_value(StatTypes.Stat.FINAL_DMG) * 100.0])
+	lines.append("%s: %.1f%%" % [_t("ui.stat.phys_pen", "Physical Penetration"), build.get_stat_value(StatTypes.Stat.PHYS_PEN) * 100.0])
+	lines.append("%s: %.1f%%" % [_t("ui.stat.elemental_pen", "Elemental Penetration"), build.get_stat_value(StatTypes.Stat.ELEMENTAL_PEN) * 100.0])
+	lines.append("%s: %.0f" % [_t("ui.stat.armor_shred", "Armor Shred"), build.get_stat_value(StatTypes.Stat.ARMOR_SHRED)])
+	lines.append("%s: %.1f%%" % [_t("ui.stat.res_shred", "Resistance Shred"), build.get_stat_value(StatTypes.Stat.RES_SHRED) * 100.0])
+	lines.append("%s: %.1f%%" % [_t("ui.stat.dodge", "Dodge"), build.get_stat_value(StatTypes.Stat.DODGE) * 100.0])
+	lines.append("%s: %.1f%%" % [_t("ui.stat.block_rate", "Block Rate"), build.get_stat_value(StatTypes.Stat.BLOCK_RATE) * 100.0])
+	lines.append("%s: %.1f%%" % [_t("ui.stat.block_reduction", "Block Reduction"), build.get_stat_value(StatTypes.Stat.BLOCK_REDUCTION) * 100.0])
+	lines.append("%s: %.1f%%" % [_t("ui.stat.life_steal", "Life Steal"), build.get_stat_value(StatTypes.Stat.LIFE_STEAL) * 100.0])
+	lines.append("%s: %.1f" % [_t("ui.stat.life_regen", "Life Regen"), build.get_stat_value(StatTypes.Stat.LIFE_REGEN)])
+	lines.append("")
+	lines.append("%s: %.0f/%.0f/%.0f%%" % [
+		_t("ui.stat.resistances", "Fire/Ice/Lightning Res"),
+		build.get_stat_value(StatTypes.Stat.FIRE_RES) * 100.0,
+		build.get_stat_value(StatTypes.Stat.ICE_RES) * 100.0,
+		build.get_stat_value(StatTypes.Stat.LIGHTNING_RES) * 100.0
+	])
+	lines.append("%s: %.0f/%.0f/%.0f/%.0f%%" % [
+		_t("ui.stat.status_chance", "Burn/Freeze/Shock/Bleed Chance"),
+		build.get_stat_value(StatTypes.Stat.BURN_CHANCE) * 100.0,
+		build.get_stat_value(StatTypes.Stat.FREEZE_CHANCE) * 100.0,
+		build.get_stat_value(StatTypes.Stat.SHOCK_CHANCE) * 100.0,
+		build.get_stat_value(StatTypes.Stat.BLEED_CHANCE) * 100.0
+	])
+	stats_summary_label.text = "\n".join(lines)
+
+
+func _refresh_stats_summary_unused() -> void:
+	if build == null or not build.is_ready() or stats_summary_label == null:
 		return
 	var s: StatContainer = player.stats
 	var lines: Array[String] = []
-	lines.append("生命值   : %d" % int(round(s.get_stat(StatTypes.Stat.HP))))
-	lines.append("攻擊力   : %d" % int(round(s.get_stat(StatTypes.Stat.ATK))))
-	lines.append("防禦力   : %d" % int(round(s.get_stat(StatTypes.Stat.DEF))))
-	lines.append("攻擊速度 : %.2f" % s.get_stat(StatTypes.Stat.ATK_SPEED))
-	lines.append("移動速度 : %.0f" % s.get_stat(StatTypes.Stat.MOVE_SPEED))
-	lines.append("暴擊率   : %.1f%%" % (s.get_stat(StatTypes.Stat.CRIT_RATE) * 100.0))
-	lines.append("暴擊傷害 : %.1f%%" % (s.get_stat(StatTypes.Stat.CRIT_DMG) * 100.0))
-	lines.append("最終傷害 : %.1f%%" % (s.get_stat(StatTypes.Stat.FINAL_DMG) * 100.0))
-	lines.append("物理穿透 : %.1f%%" % (s.get_stat(StatTypes.Stat.PHYS_PEN) * 100.0))
-	lines.append("元素穿透 : %.1f%%" % (s.get_stat(StatTypes.Stat.ELEMENTAL_PEN) * 100.0))
-	lines.append("破甲     : %.0f" % s.get_stat(StatTypes.Stat.ARMOR_SHRED))
-	lines.append("抗性削減 : %.1f%%" % (s.get_stat(StatTypes.Stat.RES_SHRED) * 100.0))
-	lines.append("閃避率   : %.1f%%" % (s.get_stat(StatTypes.Stat.DODGE) * 100.0))
-	lines.append("格擋率   : %.1f%%" % (s.get_stat(StatTypes.Stat.BLOCK_RATE) * 100.0))
-	lines.append("格擋減傷 : %.1f%%" % (s.get_stat(StatTypes.Stat.BLOCK_REDUCTION) * 100.0))
-	lines.append("吸血     : %.1f%%" % (s.get_stat(StatTypes.Stat.LIFE_STEAL) * 100.0))
-	lines.append("回血/秒  : %.1f" % s.get_stat(StatTypes.Stat.LIFE_REGEN))
+	lines.append("%s: %d" % [_t("ui.stat.hp", "HP"), int(round(s.get_stat(StatTypes.Stat.HP)))])
+	lines.append("%s: %d" % [_t("ui.stat.atk", "Attack"), int(round(s.get_stat(StatTypes.Stat.ATK)))])
+	lines.append("%s: %d" % [_t("ui.stat.def", "Defense"), int(round(s.get_stat(StatTypes.Stat.DEF)))])
+	lines.append("%s: %.2f" % [_t("ui.stat.attack_speed", "Attack Speed"), s.get_stat(StatTypes.Stat.ATK_SPEED)])
+	lines.append("%s: %.0f" % [_t("ui.stat.move_speed", "Move Speed"), s.get_stat(StatTypes.Stat.MOVE_SPEED)])
+	lines.append("%s: %.1f%%" % [_t("ui.stat.crit_rate", "Crit Rate"), s.get_stat(StatTypes.Stat.CRIT_RATE) * 100.0])
+	lines.append("%s: %.1f%%" % [_t("ui.stat.crit_damage", "Crit Damage"), s.get_stat(StatTypes.Stat.CRIT_DMG) * 100.0])
+	lines.append("%s: %.1f%%" % [_t("ui.stat.final_damage", "Final Damage"), s.get_stat(StatTypes.Stat.FINAL_DMG) * 100.0])
+	lines.append("%s: %.1f%%" % [_t("ui.stat.phys_pen", "Physical Penetration"), s.get_stat(StatTypes.Stat.PHYS_PEN) * 100.0])
+	lines.append("%s: %.1f%%" % [_t("ui.stat.elemental_pen", "Elemental Penetration"), s.get_stat(StatTypes.Stat.ELEMENTAL_PEN) * 100.0])
+	lines.append("%s: %.0f" % [_t("ui.stat.armor_shred", "Armor Shred"), s.get_stat(StatTypes.Stat.ARMOR_SHRED)])
+	lines.append("%s: %.1f%%" % [_t("ui.stat.res_shred", "Resistance Shred"), s.get_stat(StatTypes.Stat.RES_SHRED) * 100.0])
+	lines.append("%s: %.1f%%" % [_t("ui.stat.dodge", "Dodge"), s.get_stat(StatTypes.Stat.DODGE) * 100.0])
+	lines.append("%s: %.1f%%" % [_t("ui.stat.block_rate", "Block Rate"), s.get_stat(StatTypes.Stat.BLOCK_RATE) * 100.0])
+	lines.append("%s: %.1f%%" % [_t("ui.stat.block_reduction", "Block Reduction"), s.get_stat(StatTypes.Stat.BLOCK_REDUCTION) * 100.0])
+	lines.append("%s: %.1f%%" % [_t("ui.stat.life_steal", "Life Steal"), s.get_stat(StatTypes.Stat.LIFE_STEAL) * 100.0])
+	lines.append("%s: %.1f" % [_t("ui.stat.life_regen", "Life Regen"), s.get_stat(StatTypes.Stat.LIFE_REGEN)])
 	lines.append("")
-	lines.append("火/冰/雷抗: %.0f/%.0f/%.0f%%" % [
+	lines.append("%s: %.0f/%.0f/%.0f%%" % [
+		_t("ui.stat.resistances", "Fire/Ice/Lightning Res"),
 		s.get_stat(StatTypes.Stat.FIRE_RES) * 100.0,
 		s.get_stat(StatTypes.Stat.ICE_RES) * 100.0,
 		s.get_stat(StatTypes.Stat.LIGHTNING_RES) * 100.0
 	])
-	lines.append("燃/凍/電/血機率: %.0f/%.0f/%.0f/%.0f%%" % [
+	lines.append("%s: %.0f/%.0f/%.0f/%.0f%%" % [
+		_t("ui.stat.status_chance", "Burn/Freeze/Shock/Bleed Chance"),
 		s.get_stat(StatTypes.Stat.BURN_CHANCE) * 100.0,
 		s.get_stat(StatTypes.Stat.FREEZE_CHANCE) * 100.0,
 		s.get_stat(StatTypes.Stat.SHOCK_CHANCE) * 100.0,
@@ -498,12 +568,12 @@ func _position_tooltip() -> void:
 func _build_tooltip_text(item: EquipmentData, compare_item: EquipmentData = null) -> String:
 	var rarity_color: Color = StatTypes.RARITY_COLORS.get(item.rarity, Color.WHITE)
 	var rarity_hex := rarity_color.to_html(false)
-	var rarity_name: String = StatTypes.RARITY_NAMES.get(item.rarity, "未知")
+	var rarity_name: String = StatTypes.RARITY_NAMES.get(item.rarity, _t("common.unknown", "Unknown"))
 
 	var text := "[color=#%s][b]%s[/b][/color]\n" % [rarity_hex, item.display_name]
 	text += "[color=gray]%s - %s[/color]\n\n" % [StatTypes.SLOT_NAMES.get(item.slot, ""), rarity_name]
 	if Input.is_key_pressed(KEY_ALT):
-		text += "[color=gray]iLvl: %d[/color]\n\n" % item.item_level
+		text += "[color=gray]%s: %d[/color]\n\n" % [_t("ui.equipment.item_level", "iLvl"), item.item_level]
 
 	# 基礎屬性
 	if not item.base_stats.is_empty():
@@ -513,7 +583,7 @@ func _build_tooltip_text(item: EquipmentData, compare_item: EquipmentData = null
 
 	# 前綴
 	for affix: Affix in item.prefixes:
-		var prefix_label := "[color=#8888ff]前綴 T%d[/color]" % _display_tier(affix.tier)
+		var prefix_label := "[color=#8888ff]%s T%d[/color]" % [_t("ui.equipment.prefix", "Prefix"), _display_tier(affix.tier)]
 		if affix.stat_modifiers.is_empty():
 			text += prefix_label + "\n"
 		else:
@@ -526,7 +596,7 @@ func _build_tooltip_text(item: EquipmentData, compare_item: EquipmentData = null
 
 	# 後綴
 	for affix: Affix in item.suffixes:
-		var suffix_label := "[color=#88ff88]後綴 T%d[/color]" % _display_tier(affix.tier)
+		var suffix_label := "[color=#88ff88]%s T%d[/color]" % [_t("ui.equipment.suffix", "Suffix"), _display_tier(affix.tier)]
 		if affix.stat_modifiers.is_empty():
 			text += suffix_label + "\n"
 		else:
@@ -561,56 +631,42 @@ func _format_modifier(mod: StatModifier) -> String:
 
 
 func _translate_stat_name(stat_name: String) -> String:
-	var translations := {
-		"HP": "生命值",
-		"ATK": "攻擊力",
-		"ATK_SPEED": "攻擊速度",
-		"MOVE_SPEED": "移動速度",
-		"DEF": "防禦力",
-		"CRIT_RATE": "暴擊率",
-		"CRIT_DMG": "暴擊傷害",
-		"FINAL_DMG": "最終傷害",
-		"PHYS_PEN": "物理穿透",
-		"ELEMENTAL_PEN": "元素穿透",
-		"ARMOR_SHRED": "破甲",
-		"RES_SHRED": "抗性削減",
-		"LIFE_STEAL": "生命竊取",
-		"LIFE_REGEN": "生命回復",
-		"DODGE": "閃避",
-		"BLOCK_RATE": "格擋率",
-		"BLOCK_REDUCTION": "格擋減傷",
-		"PHYSICAL_DMG": "物理傷害",
-		"FIRE_DMG": "火焰傷害",
-		"ICE_DMG": "冰霜傷害",
-		"LIGHTNING_DMG": "閃電傷害",
-		"FIRE_RES": "火焰抗性",
-		"ICE_RES": "冰霜抗性",
-		"LIGHTNING_RES": "閃電抗性",
-		"ALL_RES": "全部抗性",
-		"BURN_CHANCE": "燃燒機率",
-		"FREEZE_CHANCE": "凍結機率",
-		"SHOCK_CHANCE": "感電機率",
-		"BLEED_CHANCE": "流血機率",
-		"BURN_DMG_BONUS": "燃燒傷害加成",
-		"FREEZE_DURATION_BONUS": "凍結持續加成",
-		"SHOCK_EFFECT_BONUS": "感電效果加成",
-		"BLEED_DMG_BONUS": "流血傷害加成",
-		"PHYS_TO_FIRE": "物理轉火焰",
-		"PHYS_TO_ICE": "物理轉冰霜",
-		"PHYS_TO_LIGHTNING": "物理轉閃電",
-		"FIRE_TO_ICE": "火焰轉冰霜",
-		"ICE_TO_LIGHTNING": "冰霜轉閃電",
-		"DROP_RATE": "掉落率",
-		"DROP_QUALITY": "掉落品質",
-		"PICKUP_RANGE": "拾取範圍",
+	var key_by_stat := {
+		"HP": "ui.stat.hp",
+		"ATK": "ui.stat.atk",
+		"ATK_SPEED": "ui.stat.attack_speed",
+		"MOVE_SPEED": "ui.stat.move_speed",
+		"DEF": "ui.stat.def",
+		"CRIT_RATE": "ui.stat.crit_rate",
+		"CRIT_DMG": "ui.stat.crit_damage",
+		"FINAL_DMG": "ui.stat.final_damage",
+		"PHYS_PEN": "ui.stat.phys_pen",
+		"ELEMENTAL_PEN": "ui.stat.elemental_pen",
+		"ARMOR_SHRED": "ui.stat.armor_shred",
+		"RES_SHRED": "ui.stat.res_shred",
+		"LIFE_STEAL": "ui.stat.life_steal",
+		"LIFE_REGEN": "ui.stat.life_regen",
+		"DODGE": "ui.stat.dodge",
+		"BLOCK_RATE": "ui.stat.block_rate",
+		"BLOCK_REDUCTION": "ui.stat.block_reduction",
+		"FIRE_RES": "ui.stat.resistances",
+		"ICE_RES": "ui.stat.resistances",
+		"LIGHTNING_RES": "ui.stat.resistances",
+		"BURN_CHANCE": "ui.stat.status_chance",
+		"FREEZE_CHANCE": "ui.stat.status_chance",
+		"SHOCK_CHANCE": "ui.stat.status_chance",
+		"BLEED_CHANCE": "ui.stat.status_chance",
 	}
-	return translations.get(stat_name, stat_name)
+	var key: String = str(key_by_stat.get(stat_name, ""))
+	if key.is_empty():
+		return stat_name
+	return _t(key, stat_name)
 
 
 func _build_compare_text(new_item: EquipmentData, old_item: EquipmentData) -> String:
 	var lines: Array[String] = []
 	var name_color: String = StatTypes.RARITY_COLORS.get(old_item.rarity, Color.WHITE).to_html(false)
-	lines.append("[color=gray]對比已裝備：[/color][color=#%s]%s[/color]" % [name_color, old_item.display_name])
+	lines.append("[color=gray]%s[/color][color=#%s]%s[/color]" % [_t("ui.equipment.compare_equipped", "Compare Equipped: "), name_color, old_item.display_name])
 
 	var new_totals := _collect_item_modifiers(new_item)
 	var old_totals := _collect_item_modifiers(old_item)
@@ -632,7 +688,7 @@ func _build_compare_text(new_item: EquipmentData, old_item: EquipmentData) -> St
 		delta_lines.append(_format_delta(stat, modifier_type, delta))
 
 	if delta_lines.is_empty():
-		lines.append("[color=gray]無變化[/color]")
+		lines.append("[color=gray]%s[/color]" % _t("ui.equipment.no_change", "No Change"))
 	else:
 		lines.append_array(delta_lines)
 
@@ -714,3 +770,34 @@ func _is_ratio_stat(stat: int) -> bool:
 func _display_tier(raw_tier: int) -> int:
 	var clamped := clampi(raw_tier, 1, 5)
 	return 6 - clamped
+
+
+func _on_locale_changed(_locale: String) -> void:
+	_apply_localized_texts()
+	if visible:
+		refresh()
+
+
+func _apply_localized_texts() -> void:
+	if title_label != null:
+		title_label.text = _t("ui.panel.equipment", "Equipment")
+	var nav := panel_vbox.get_node_or_null("NavTabs") as HBoxContainer
+	if nav != null:
+		for tab in _nav_tabs():
+			var tab_id := str(tab.get("id", ""))
+			var button := nav.get_node_or_null("Nav_%s" % tab_id) as Button
+			if button != null:
+				button.text = _t(str(tab.get("label_key", "")), str(tab.get("fallback", tab_id)))
+
+
+func _nav_tabs() -> Array[Dictionary]:
+	return [
+		{"id": "equipment", "label_key": "ui.panel.equipment", "fallback": "Equipment"},
+		{"id": "module", "label_key": "ui.panel.modules", "fallback": "Modules"},
+		{"id": "skill", "label_key": "ui.panel.skills", "fallback": "Skills"},
+		{"id": "crafting", "label_key": "ui.panel.crafting", "fallback": "Crafting"},
+	]
+
+
+func _t(key: String, fallback: String) -> String:
+	return LocalizationService.text(key, fallback)

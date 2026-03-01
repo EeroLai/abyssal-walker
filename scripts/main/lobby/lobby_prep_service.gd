@@ -5,6 +5,7 @@ const BEACON_MODIFIER_SYSTEM := preload("res://scripts/abyss/beacon_modifier_sys
 
 var _game_manager: Variant = null
 var _data_manager: Variant = null
+var _build_session_service: Variant = null
 
 
 func set_game_manager(game_manager: Variant) -> void:
@@ -13,6 +14,10 @@ func set_game_manager(game_manager: Variant) -> void:
 
 func set_data_manager(data_manager: Variant) -> void:
 	_data_manager = data_manager
+
+
+func set_build_session_service(build_session_service: Variant) -> void:
+	_build_session_service = build_session_service
 
 
 func get_beacon_entries() -> Array:
@@ -42,7 +47,7 @@ func get_beacon_id(beacon: Variant) -> String:
 func build_selected_beacon_model(raw_beacon: Variant) -> Dictionary:
 	var beacon: AbyssBeaconData = AbyssBeaconData.new()
 	beacon.id = get_beacon_id(raw_beacon)
-	beacon.display_name = str(_beacon_value(raw_beacon, "display_name", "Abyss Beacon"))
+	beacon.display_name = _get_beacon_display_name(raw_beacon)
 	beacon.template_id = get_beacon_template_id(raw_beacon)
 	beacon.base_difficulty = int(_beacon_value(raw_beacon, "base_difficulty", 1))
 	beacon.max_depth = int(_beacon_value(raw_beacon, "max_depth", 1))
@@ -57,23 +62,30 @@ func build_selected_beacon_model(raw_beacon: Variant) -> Dictionary:
 
 func build_beacon_preview_text(beacon: AbyssBeaconData, consumes: bool) -> String:
 	if beacon == null:
-		return "No beacon selected.\n\nChoose a beacon from the grid to begin the next dive."
+		return _t(
+			"ui.beacon.no_selection",
+			"No beacon selected.\n\nChoose a beacon from the grid to begin the next dive."
+		)
 	var start_level: int = beacon.get_effective_level_at_depth(1, 0)
 	var end_level: int = beacon.get_effective_level_at_depth(beacon.max_depth, 0)
 	var modifier_lines: Array[String] = BEACON_MODIFIER_SYSTEM.get_modifier_display_lines(beacon.modifier_ids)
-	var modifier_text: String = "Modifiers: None"
+	var modifier_text := _t("ui.beacon.modifiers_none", "Modifiers: None")
 	if not modifier_lines.is_empty():
-		modifier_text = "Modifiers:\n- %s" % "\n- ".join(modifier_lines)
-	var cost_text: String = "Cost: Consumes 1 Beacon" if consumes else "Cost: None"
-	return "%s\nStart Lv %d  End Lv %d  Depth %d  Lives %d\n%s\n%s" % [
-		beacon.display_name,
-		start_level,
-		end_level,
-		beacon.max_depth,
-		beacon.lives_max,
-		cost_text,
-		modifier_text,
-	]
+		modifier_text = _fmt("ui.beacon.modifiers_list", {"lines": "\n- ".join(modifier_lines)}, "Modifiers:\n- {lines}")
+	var cost_text := _t("ui.beacon.cost_consumes", "Cost: Consumes 1 Beacon") if consumes else _t("ui.beacon.cost_none", "Cost: None")
+	return _fmt(
+		"ui.beacon.preview",
+		{
+			"name": beacon.display_name,
+			"start_level": start_level,
+			"end_level": end_level,
+			"depth": beacon.max_depth,
+			"lives": beacon.lives_max,
+			"cost_text": cost_text,
+			"modifier_text": modifier_text,
+		},
+		"{name}\nStart Lv {start_level}  End Lv {end_level}  Depth {depth}  Lives {lives}\n{cost_text}\n{modifier_text}"
+	)
 
 
 func build_summary_model() -> Dictionary:
@@ -88,13 +100,13 @@ func build_summary_model() -> Dictionary:
 			var mat_data: Dictionary = data_manager.get_crafting_material(material_id)
 			material_lines.append("- %s x%d" % [str(mat_data.get("display_name", material_id)), amount])
 	if material_lines.is_empty():
-		material_lines.append("- Empty")
+		material_lines.append("- %s" % _t("common.empty", "Empty"))
 
 	return {
 		"stash_material_total": 0 if game_manager == null else game_manager.get_stash_material_total(),
 		"material_lines": material_lines,
 		"stash_counts": {} if game_manager == null else game_manager.get_stash_loot_counts(),
-		"loadout_counts": {} if game_manager == null else game_manager.get_operation_loadout_counts(),
+		"loadout_counts": _get_build_counts() if _has_build_session() else ({} if game_manager == null else game_manager.get_operation_loadout_counts()),
 	}
 
 
@@ -107,11 +119,28 @@ func get_stash_items(category: String) -> Array:
 
 
 func get_loadout_items(category: String) -> Array:
+	if _has_build_session():
+		return _build_session_service.get_build_items(category)
 	var game_manager: Variant = _get_game_manager()
 	if game_manager == null:
 		return []
 	var snapshot: Dictionary = game_manager.get_operation_loadout_snapshot()
 	return snapshot.get(category, [])
+
+
+func get_loadout_entry_models(category: String) -> Array[Dictionary]:
+	if _has_build_session():
+		return _build_session_service.get_build_entry_models(category)
+	var items: Array = get_loadout_items(category)
+	var entries: Array[Dictionary] = []
+	for i in range(items.size()):
+		entries.append({
+			"category": category,
+			"index": i,
+			"source": "inventory",
+			"item": items[i],
+		})
+	return entries
 
 
 func get_stash_item(category: String, item_index: int) -> Variant:
@@ -122,6 +151,8 @@ func get_stash_item(category: String, item_index: int) -> Variant:
 
 
 func get_loadout_item(category: String, item_index: int) -> Variant:
+	if _has_build_session():
+		return _build_session_service.get_build_item(category, item_index)
 	var items: Array = get_loadout_items(category)
 	if item_index < 0 or item_index >= items.size():
 		return null
@@ -129,6 +160,9 @@ func get_loadout_item(category: String, item_index: int) -> Variant:
 
 
 func clear_loadout(category_keys: Array[String]) -> void:
+	if _has_build_session():
+		_build_session_service.clear_build_inventory_to_stash(category_keys)
+		return
 	var game_manager: Variant = _get_game_manager()
 	if game_manager == null:
 		return
@@ -139,13 +173,23 @@ func clear_loadout(category_keys: Array[String]) -> void:
 
 
 func move_stash_item_to_loadout(category: String, item_index: int) -> bool:
+	if _has_build_session():
+		return _build_session_service.move_stash_item_to_build(category, item_index)
 	var game_manager: Variant = _get_game_manager()
 	if game_manager == null:
 		return false
 	return game_manager.move_stash_loot_to_loadout(category, item_index)
 
 
+func quick_equip_stash_item(category: String, item_index: int) -> bool:
+	if not _has_build_session():
+		return false
+	return _build_session_service.quick_equip_stash_item(category, item_index)
+
+
 func move_loadout_item_to_stash(category: String, item_index: int) -> bool:
+	if _has_build_session():
+		return _build_session_service.move_build_item_to_stash(category, item_index)
 	var game_manager: Variant = _get_game_manager()
 	if game_manager == null:
 		return false
@@ -154,10 +198,10 @@ func move_loadout_item_to_stash(category: String, item_index: int) -> bool:
 
 func get_beacon_card_modifier_summary(beacon: Variant) -> String:
 	if not bool(_beacon_value(beacon, "consumable", true)):
-		return "No Beacon Cost"
+		return _t("ui.beacon.no_cost", "No Beacon Cost")
 	var modifier_ids: PackedStringArray = get_beacon_modifier_ids(beacon)
 	if modifier_ids.is_empty():
-		return "Clear Signal"
+		return _t("ui.beacon.clear_signal", "Clear Signal")
 	var names: Array[String] = []
 	for modifier_id in modifier_ids:
 		names.append(BEACON_MODIFIER_SYSTEM.get_modifier_name(str(modifier_id)))
@@ -170,20 +214,24 @@ func get_beacon_card_modifier_summary(beacon: Variant) -> String:
 
 
 func build_beacon_card_text(beacon: Variant) -> String:
-	var display_name := str(_beacon_value(beacon, "display_name", "Abyss Beacon"))
+	var display_name := _get_beacon_display_name(beacon)
 	var tag_label := get_beacon_template_label(beacon)
 	var level := int(_beacon_value(beacon, "base_difficulty", 1))
 	var depth := int(_beacon_value(beacon, "max_depth", 1))
 	var lives := int(_beacon_value(beacon, "lives_max", 1))
 	var modifier_summary := get_beacon_card_modifier_summary(beacon)
-	return "%s\n[%s]  Lv %d  Depth %d  Lives %d\n%s" % [
-		display_name,
-		tag_label,
-		level,
-		depth,
-		lives,
-		modifier_summary,
-	]
+	return _fmt(
+		"ui.beacon.card",
+		{
+			"name": display_name,
+			"tag": tag_label,
+			"level": level,
+			"depth": depth,
+			"lives": lives,
+			"modifier_summary": modifier_summary,
+		},
+		"{name}\n[{tag}]  Lv {level}  Depth {depth}  Lives {lives}\n{modifier_summary}"
+	)
 
 
 func get_beacon_card_accent(beacon: Variant) -> Color:
@@ -194,7 +242,7 @@ func get_beacon_card_accent(beacon: Variant) -> Color:
 
 func get_beacon_template_label(beacon: Variant) -> String:
 	var template_data: Dictionary = get_beacon_template_data(beacon)
-	return str(template_data.get("tag_label", "Beacon"))
+	return str(template_data.get("tag_label", _t("ui.beacon.default_tag", "Beacon")))
 
 
 func start_selected_beacon(
@@ -217,7 +265,7 @@ func start_selected_beacon(
 func _build_baseline_beacon_entry() -> Dictionary:
 	return {
 		"id": "baseline_loop",
-		"display_name": "Baseline Dive",
+		"display_name": _t("ui.beacon.baseline_dive", "Baseline Dive"),
 		"template_id": "baseline",
 		"base_difficulty": 1,
 		"max_depth": 5,
@@ -231,7 +279,7 @@ func _build_baseline_beacon_entry() -> Dictionary:
 func _wrap_inventory_beacon_entry(beacon: Variant, inventory_index: int) -> Dictionary:
 	return {
 		"id": str(_beacon_value(beacon, "id", "")),
-		"display_name": str(_beacon_value(beacon, "display_name", "Abyss Beacon")),
+		"display_name": _get_beacon_display_name(beacon),
 		"template_id": get_beacon_template_id(beacon),
 		"base_difficulty": int(_beacon_value(beacon, "base_difficulty", 1)),
 		"max_depth": int(_beacon_value(beacon, "max_depth", 1)),
@@ -249,6 +297,16 @@ func _beacon_value(beacon: Variant, key: String, default_value: Variant) -> Vari
 	if beacon is Dictionary:
 		return (beacon as Dictionary).get(key, default_value)
 	return default_value
+
+
+func _has_build_session() -> bool:
+	return _build_session_service != null
+
+
+func _get_build_counts() -> Dictionary:
+	if not _has_build_session():
+		return {}
+	return _build_session_service.get_build_counts()
 
 
 func get_beacon_modifier_ids(beacon: Variant) -> PackedStringArray:
@@ -298,3 +356,17 @@ func _get_data_manager() -> Variant:
 	if tree == null or tree.root == null:
 		return null
 	return tree.root.get_node_or_null(^"/root/DataManager")
+
+
+func _get_beacon_display_name(beacon: Variant) -> String:
+	if get_beacon_template_id(beacon) == "baseline":
+		return _t("ui.beacon.baseline_dive", "Baseline Dive")
+	return str(_beacon_value(beacon, "display_name", _t("ui.beacon.default_name", "Abyss Beacon")))
+
+
+func _t(key: String, fallback: String) -> String:
+	return LocalizationService.text(key, fallback)
+
+
+func _fmt(key: String, replacements: Dictionary, fallback: String) -> String:
+	return LocalizationService.format(key, replacements, fallback)

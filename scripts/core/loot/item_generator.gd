@@ -487,14 +487,22 @@ static func get_affix_max(rarity: StatTypes.Rarity) -> int:
 
 
 static func reroll_affixes(equipment: EquipmentData, floor_level: int) -> void:
+	reroll_affixes_for_item_level(equipment, _floor_to_item_level(floor_level))
+
+
+static func reroll_affixes_for_item_level(equipment: EquipmentData, item_level: int) -> void:
 	equipment.prefixes.clear()
 	equipment.suffixes.clear()
-	var item_level: int = _floor_to_item_level(floor_level)
-	var affix_count := _get_affix_count(equipment.rarity, item_level)
-	_generate_affixes(equipment, affix_count, item_level)
+	var normalized_item_level: int = clampi(item_level, 1, 100)
+	var affix_count := _get_affix_count(equipment.rarity, normalized_item_level)
+	_generate_affixes(equipment, affix_count, normalized_item_level)
 
 
 static func add_random_affix(equipment: EquipmentData, floor_level: int) -> bool:
+	return add_random_affix_for_item_level(equipment, _floor_to_item_level(floor_level))
+
+
+static func add_random_affix_for_item_level(equipment: EquipmentData, item_level: int) -> bool:
 	var max_total := get_affix_max(equipment.rarity)
 	var current_total := equipment.get_total_affix_count()
 	if current_total >= max_total:
@@ -509,15 +517,23 @@ static func add_random_affix(equipment: EquipmentData, floor_level: int) -> bool
 	var want_prefix := can_prefix and (not can_suffix or type_roll < 0.5)
 
 	if want_prefix:
-		return _add_affix_of_type(equipment, StatTypes.AffixType.PREFIX, floor_level)
+		return _add_affix_of_type_for_item_level(equipment, StatTypes.AffixType.PREFIX, item_level)
 	else:
-		return _add_affix_of_type(equipment, StatTypes.AffixType.SUFFIX, floor_level)
+		return _add_affix_of_type_for_item_level(equipment, StatTypes.AffixType.SUFFIX, item_level)
 
 
 static func _add_affix_of_type(
 	equipment: EquipmentData,
 	affix_type: StatTypes.AffixType,
 	floor_level: int
+) -> bool:
+	return _add_affix_of_type_for_item_level(equipment, affix_type, _floor_to_item_level(floor_level))
+
+
+static func _add_affix_of_type_for_item_level(
+	equipment: EquipmentData,
+	affix_type: StatTypes.AffixType,
+	item_level: int
 ) -> bool:
 	var available := DataManager.get_affixes_for_slot(equipment.slot, affix_type)
 	if available.is_empty():
@@ -539,7 +555,8 @@ static func _add_affix_of_type(
 	if available.is_empty():
 		return false
 
-	var new_affix: Affix = _pick_and_generate_affix(available, _floor_to_item_level(floor_level))
+	var normalized_item_level: int = clampi(item_level, 1, 100)
+	var new_affix: Affix = _pick_and_generate_affix(available, normalized_item_level)
 	if new_affix == null:
 		return false
 

@@ -77,22 +77,30 @@ func build_item_tooltip(item: Variant) -> String:
 		return (item as SupportGem).get_tooltip()
 	if item is Module:
 		return _build_module_tooltip(item as Module)
-	return "Unknown Item"
+	return _t("common.unknown", "Unknown")
 
 
 func _build_module_tooltip(mod: Module) -> String:
 	if mod == null:
-		return "Unknown Item"
+		return _t("common.unknown", "Unknown")
 	var lines: Array[String] = []
 	lines.append("[color=#%s][b]%s[/b][/color]" % [mod.get_type_color().to_html(false), mod.display_name])
-	lines.append("[color=gray]%s | Load %d[/color]" % [mod.get_type_name(), mod.load_cost])
+	lines.append("[color=gray]%s[/color]" % _fmt("ui.module.tooltip_line", {"type": mod.get_type_name(), "load": mod.load_cost}, "{type} | Load {load}"))
 	if mod.description != "":
 		lines.append("")
 		lines.append(mod.description)
 	if not mod.modifiers.is_empty():
 		lines.append("")
-		lines.append("Modifiers:")
+		lines.append("%s:" % _t("common.modifiers", "Modifiers"))
 		for stat_mod in mod.modifiers:
 			if stat_mod is StatModifier:
 				lines.append("- %s" % (stat_mod as StatModifier).get_description())
 	return "\n".join(lines)
+
+
+func _t(key: String, fallback: String) -> String:
+	return LocalizationService.text(key, fallback)
+
+
+func _fmt(key: String, replacements: Dictionary, fallback: String) -> String:
+	return LocalizationService.format(key, replacements, fallback)

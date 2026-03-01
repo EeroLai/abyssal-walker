@@ -21,13 +21,13 @@ func setup(
 	navigate_handler = on_navigate
 	equipment_panel = _instantiate_panel(equipment_scene) as EquipmentPanel
 	skill_link_panel = _instantiate_panel(skill_link_scene) as SkillLinkPanel
-	crafting_panel = _instantiate_panel(crafting_scene) as CraftingPanel
 	module_panel = _instantiate_panel(module_scene) as ModulePanel
+	_configure_run_only_panels()
 
 
-func handle_navigation(panel_id: String, player: Player, current_floor: int) -> void:
+func handle_navigation(panel_id: String, player: Player) -> void:
 	close_all()
-	open(panel_id, player, current_floor)
+	open(panel_id, player)
 
 
 func close_all() -> void:
@@ -36,7 +36,7 @@ func close_all() -> void:
 			panel.call("close")
 
 
-func toggle(panel_id: String, player: Player, current_floor: int) -> void:
+func toggle(panel_id: String, player: Player) -> void:
 	var panel := panel_by_id(panel_id)
 	if panel == null:
 		return
@@ -44,10 +44,10 @@ func toggle(panel_id: String, player: Player, current_floor: int) -> void:
 		if panel.has_method("close"):
 			panel.call("close")
 		return
-	open(panel_id, player, current_floor)
+	open(panel_id, player)
 
 
-func open(panel_id: String, player: Player, current_floor: int) -> void:
+func open(panel_id: String, player: Player) -> void:
 	match panel_id:
 		"equipment":
 			if equipment_panel:
@@ -55,9 +55,6 @@ func open(panel_id: String, player: Player, current_floor: int) -> void:
 		"skill":
 			if skill_link_panel:
 				skill_link_panel.open(player)
-		"crafting":
-			if crafting_panel:
-				crafting_panel.open(player, current_floor)
 		"module":
 			if module_panel:
 				module_panel.open(player)
@@ -69,8 +66,6 @@ func panel_by_id(panel_id: String) -> Control:
 			return equipment_panel
 		"skill":
 			return skill_link_panel
-		"crafting":
-			return crafting_panel
 		"module":
 			return module_panel
 	return null
@@ -86,3 +81,9 @@ func _instantiate_panel(scene: PackedScene) -> Control:
 	if navigate_handler.is_valid() and panel.has_signal("navigate_to"):
 		panel.connect("navigate_to", navigate_handler)
 	return panel
+
+
+func _configure_run_only_panels() -> void:
+	for panel in [equipment_panel, skill_link_panel, module_panel]:
+		if panel != null and panel.has_method("set_allow_crafting_navigation"):
+			panel.call("set_allow_crafting_navigation", false)

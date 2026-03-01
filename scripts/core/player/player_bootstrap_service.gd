@@ -1,13 +1,6 @@
 class_name PlayerBootstrapService
 extends RefCounted
 
-const STARTER_BACKUP_WEAPON_IDS: Array[String] = [
-	"iron_dagger",
-	"short_bow",
-	"apprentice_wand",
-]
-
-
 func setup_initial_build(
 	player: Player,
 	debug_grant_all_skill_gems: bool,
@@ -18,15 +11,11 @@ func setup_initial_build(
 
 	if GameManager.has_persistent_player_build():
 		GameManager.apply_persistent_player_build_to_player(player)
-		GameManager.apply_operation_loadout_to_player(player)
 		_apply_debug_gem_grants(player, debug_grant_all_skill_gems, debug_grant_all_support_gems)
 		GameManager.save_persistent_player_build_from_player(player)
 		return
 
-	var weapon: EquipmentData = ItemGenerator.generate_equipment("iron_sword", StatTypes.Rarity.WHITE, 1)
-	if weapon != null:
-		player.equip(weapon)
-	_grant_starter_backup_weapons(player)
+	_grant_starter_equipment(player)
 
 	for id in DataManager.get_starter_skill_gem_ids():
 		var gem: SkillGem = DataManager.create_skill_gem(id)
@@ -45,7 +34,6 @@ func setup_initial_build(
 		if mod != null:
 			player.add_module_to_inventory(mod)
 
-	GameManager.apply_operation_loadout_to_player(player)
 	GameManager.save_persistent_player_build_from_player(player)
 
 
@@ -60,11 +48,19 @@ func _apply_debug_gem_grants(
 		_grant_all_support_gems_for_testing(player)
 
 
-func _grant_starter_backup_weapons(player: Player) -> void:
-	for base_id in STARTER_BACKUP_WEAPON_IDS:
+func _grant_starter_equipment(player: Player) -> void:
+	var starter_ids: Array[String] = DataManager.get_starter_equipment_ids()
+	for i in range(starter_ids.size()):
+		var base_id: String = starter_ids[i]
 		var weapon: EquipmentData = ItemGenerator.generate_equipment(base_id, StatTypes.Rarity.WHITE, 1)
-		if weapon != null:
-			player.add_to_inventory(weapon)
+		if weapon == null:
+			continue
+		if i == 0:
+			var replaced_item: EquipmentData = player.equip(weapon)
+			if replaced_item != null:
+				player.add_to_inventory(replaced_item)
+			continue
+		player.add_to_inventory(weapon)
 
 
 func _grant_all_skill_gems_for_testing(player: Player) -> void:

@@ -93,6 +93,26 @@ func move_loadout_loot_to_stash(category: String, index: int) -> bool:
 	return _move_between_loot_storages(operation_loadout, stash_loot, category, index)
 
 
+func take_stash_loot_item(category: String, index: int) -> Variant:
+	var storage_key := _storage_key_for_category(category)
+	if storage_key == "" or not stash_loot.has(storage_key):
+		return null
+	var items: Array = stash_loot[storage_key]
+	if index < 0 or index >= items.size():
+		return null
+	var item: Variant = items[index]
+	items.remove_at(index)
+	return item
+
+
+func add_loot_to_stash(item: Variant) -> bool:
+	var storage_key := _storage_key_for_category(_category_key_for_item(item))
+	if storage_key == "" or not stash_loot.has(storage_key):
+		return false
+	stash_loot[storage_key].append(item)
+	return true
+
+
 func apply_operation_loadout_to_player(player: Player) -> void:
 	if player == null:
 		return

@@ -26,7 +26,7 @@ signal navigate_to(panel_id: String)
 var player: Player = null
 var inventory_buttons: Array[Button] = []
 var selected_index: int = -1
-var current_floor: int = 1
+var pause_tree_on_open: bool = true
 
 const SLOT_SIZE := Vector2(48, 48)
 const PANEL_HALF_SIZE := Vector2(450, 250)
@@ -41,9 +41,12 @@ func _ready() -> void:
 	_apply_visual_style()
 	_setup_material_summary_row()
 	_setup_nav_tabs()
+	_apply_localized_texts()
 	_create_inventory_slots()
 	_connect_buttons()
 	visible = false
+	if not LocalizationService.locale_changed.is_connected(_on_locale_changed):
+		LocalizationService.locale_changed.connect(_on_locale_changed)
 
 
 func _setup_nav_tabs() -> void:
@@ -54,17 +57,11 @@ func _setup_nav_tabs() -> void:
 	nav.alignment = BoxContainer.ALIGNMENT_CENTER
 	nav.add_theme_constant_override("separation", 6)
 
-	var tabs := [
-		{"id": "equipment", "label": "裝備"},
-		{"id": "module", "label": "模組"},
-		{"id": "skill", "label": "技能"},
-		{"id": "crafting", "label": "打造"},
-	]
-
-	for tab in tabs:
+	for tab in _nav_tabs():
 		var tab_id: String = str(tab["id"])
 		var btn := Button.new()
-		btn.text = str(tab["label"])
+		btn.name = "Nav_%s" % tab_id
+		btn.text = _t(str(tab.get("label_key", "")), str(tab.get("fallback", tab_id)))
 		_style_nav_button(btn, tab_id == "crafting")
 		btn.pressed.connect(func() -> void:
 			if tab_id != "crafting":
@@ -164,18 +161,24 @@ func _input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 
 
-func open(p: Player, floor_level: int) -> void:
+func open(p: Player) -> void:
 	player = p
-	current_floor = floor_level
+	_apply_localized_texts()
 	visible = true
 	refresh()
-	get_tree().paused = true
+	if pause_tree_on_open:
+		get_tree().paused = true
 
 
 func close() -> void:
 	visible = false
-	get_tree().paused = false
+	if pause_tree_on_open:
+		get_tree().paused = false
 	closed.emit()
+
+
+func set_pause_tree_on_open(enabled: bool) -> void:
+	pause_tree_on_open = enabled
 
 
 func refresh() -> void:
@@ -241,17 +244,17 @@ func _refresh_inventory() -> void:
 
 func _refresh_selected() -> void:
 	if selected_index < 0 or player == null:
-		selected_label.text = "未選擇裝備"
-		tooltip_label.text = "選擇裝備以查看"
+		selected_label.text = _t("ui.crafting.no_selection", "No equipment selected")
+		tooltip_label.text = _t("ui.crafting.select_equipment", "Select equipment to inspect")
 		return
 
 	var item: EquipmentData = player.get_inventory_item(selected_index)
 	if item == null:
-		selected_label.text = "未選擇裝備"
-		tooltip_label.text = "選擇裝備以查看"
+		selected_label.text = _t("ui.crafting.no_selection", "No equipment selected")
+		tooltip_label.text = _t("ui.crafting.select_equipment", "Select equipment to inspect")
 		return
 
-	selected_label.text = "已選擇：%s" % item.display_name
+	selected_label.text = _fmt("ui.crafting.selected", {"name": item.display_name}, "Selected: {name}")
 	tooltip_label.text = item.get_tooltip()
 
 
@@ -261,7 +264,11 @@ func _refresh_material_counts() -> void:
 	var alter := player.get_material_count("alter")
 	var augment := player.get_material_count("augment")
 	var refine := player.get_material_count("refine")
-	material_count_label.text = "改造: %d | 增幅: %d | 精煉: %d" % [alter, augment, refine]
+	material_count_label.text = _fmt(
+		"ui.crafting.material_counts",
+		{"alter": alter, "augment": augment, "refine": refine},
+		"Alter: {alter} | Augment: {augment} | Refine: {refine}"
+	)
 
 
 func _connect_buttons() -> void:
@@ -331,7 +338,7 @@ func _on_material_pressed(material_id: String) -> void:
 	if not player.consume_material(material_id, material_cost):
 		return
 
-	var success := CraftingSystem.apply_material(item, material_id, current_floor)
+	var success := CraftingSystem.apply_material(item, material_id)
 	if not success:
 		player.add_material(material_id, material_cost)
 	EventBus.crafting_started.emit(item, material_id)
@@ -349,9 +356,9 @@ func _refresh_material_button_texts() -> void:
 	if selected_index >= 0:
 		item = player.get_inventory_item(selected_index)
 
-	_set_material_button(alter_button, "改造", item, "alter")
-	_set_material_button(augment_button, "增幅", item, "augment")
-	_set_material_button(refine_button, "精煉", item, "refine")
+	_set_material_button(alter_button, _t("ui.crafting.alter", "Alter"), item, "alter")
+	_set_material_button(augment_button, _t("ui.crafting.augment", "Augment"), item, "augment")
+	_set_material_button(refine_button, _t("ui.crafting.refine", "Refine"), item, "refine")
 
 
 func _set_material_button(btn: Button, label: String, item: EquipmentData, material_id: String) -> void:
@@ -362,3 +369,38 @@ func _set_material_button(btn: Button, label: String, item: EquipmentData, mater
 	var can_use := item != null and CraftingSystem.can_apply_material(item, material_id) and count >= cost
 	btn.text = label
 	btn.disabled = not can_use
+
+
+func _on_locale_changed(_locale: String) -> void:
+	_apply_localized_texts()
+	if visible:
+		refresh()
+
+
+func _apply_localized_texts() -> void:
+	if title_label != null:
+		title_label.text = _t("ui.panel.crafting", "Crafting")
+	var nav := panel_vbox.get_node_or_null("NavTabs") as HBoxContainer
+	if nav != null:
+		for tab in _nav_tabs():
+			var tab_id := str(tab.get("id", ""))
+			var button := nav.get_node_or_null("Nav_%s" % tab_id) as Button
+			if button != null:
+				button.text = _t(str(tab.get("label_key", "")), str(tab.get("fallback", tab_id)))
+
+
+func _nav_tabs() -> Array[Dictionary]:
+	return [
+		{"id": "equipment", "label_key": "ui.panel.equipment", "fallback": "Equipment"},
+		{"id": "module", "label_key": "ui.panel.modules", "fallback": "Modules"},
+		{"id": "skill", "label_key": "ui.panel.skills", "fallback": "Skills"},
+		{"id": "crafting", "label_key": "ui.panel.crafting", "fallback": "Crafting"},
+	]
+
+
+func _t(key: String, fallback: String) -> String:
+	return LocalizationService.text(key, fallback)
+
+
+func _fmt(key: String, replacements: Dictionary, fallback: String) -> String:
+	return LocalizationService.format(key, replacements, fallback)

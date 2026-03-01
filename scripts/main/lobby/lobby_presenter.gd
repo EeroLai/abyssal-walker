@@ -27,15 +27,18 @@ var _beacon_summary_label: Label = null
 var _stash_category: OptionButton = null
 var _loadout_category: OptionButton = null
 var _stash_grid: GridContainer = null
-var _loadout_grid: GridContainer = null
+var _loadout_equipped_grid: GridContainer = null
+var _loadout_inventory_grid: GridContainer = null
 var _add_button: Button = null
+var _quick_equip_button: Button = null
 var _remove_button: Button = null
 var _clear_loadout_button: Button = null
 var _start_button: Button = null
 var _prep_toggle_button: Button = null
 
 var _stash_slot_buttons: Array[Button] = []
-var _loadout_slot_buttons: Array[Button] = []
+var _loadout_equipped_slot_buttons: Array[Button] = []
+var _loadout_inventory_slot_buttons: Array[Button] = []
 var _beacon_slot_buttons: Array[Button] = []
 
 
@@ -64,8 +67,10 @@ func setup(
 	stash_category: OptionButton,
 	loadout_category: OptionButton,
 	stash_grid: GridContainer,
-	loadout_grid: GridContainer,
+	loadout_equipped_grid: GridContainer,
+	loadout_inventory_grid: GridContainer,
 	add_button: Button,
+	quick_equip_button: Button,
 	remove_button: Button,
 	clear_loadout_button: Button,
 	start_button: Button,
@@ -95,8 +100,10 @@ func setup(
 	_stash_category = stash_category
 	_loadout_category = loadout_category
 	_stash_grid = stash_grid
-	_loadout_grid = loadout_grid
+	_loadout_equipped_grid = loadout_equipped_grid
+	_loadout_inventory_grid = loadout_inventory_grid
 	_add_button = add_button
+	_quick_equip_button = quick_equip_button
 	_remove_button = remove_button
 	_clear_loadout_button = clear_loadout_button
 	_start_button = start_button
@@ -110,9 +117,9 @@ func setup_controls() -> void:
 	_setup_category_options(_stash_category)
 	_setup_category_options(_loadout_category)
 	_grid_renderer.configure_grid(_stash_grid, _grid_columns, 6, 6)
-	_grid_renderer.configure_grid(_loadout_grid, _grid_columns, 6, 6)
-	if _prep_toggle_button != null:
-		_prep_toggle_button.text = "Open Loadout Prep"
+	_grid_renderer.configure_grid(_loadout_equipped_grid, _grid_columns, 6, 6)
+	_grid_renderer.configure_grid(_loadout_inventory_grid, _grid_columns, 6, 6)
+	refresh_localized_text()
 	_tooltip_presenter.setup(_owner)
 
 
@@ -192,6 +199,7 @@ func refresh_stash_list() -> void:
 		_stash_grid,
 		_stash_slot_buttons,
 		items,
+		_state_service.stash_entries,
 		_state_service.selected_stash_index,
 		_slot_size,
 		_min_grid_slots,
@@ -205,13 +213,17 @@ func refresh_stash_list() -> void:
 func refresh_loadout_list() -> void:
 	var category: String = _selected_category_key(_loadout_category)
 	var items: Array = _state_service.refresh_loadout_entries(category, _prep_service)
-	_state_service.selected_loadout_index = _grid_renderer.rebuild_loot_grid(
-		_loadout_grid,
-		_loadout_slot_buttons,
+	_state_service.selected_loadout_index = _grid_renderer.rebuild_sectioned_loot_grids(
+		_loadout_equipped_grid,
+		_loadout_equipped_slot_buttons,
+		_loadout_inventory_grid,
+		_loadout_inventory_slot_buttons,
 		items,
+		_state_service.loadout_entries,
 		_state_service.selected_loadout_index,
 		_slot_size,
-		_min_grid_slots,
+		_grid_columns,
+		_grid_columns * 4,
 		_grid_columns,
 		Callable(self, "on_loadout_slot_pressed"),
 		Callable(self, "on_loadout_slot_hovered"),
@@ -250,6 +262,8 @@ func on_loadout_slot_hovered(index: int) -> void:
 func refresh_transfer_buttons() -> void:
 	if _add_button != null:
 		_add_button.disabled = not _state_service.has_valid_stash_selection()
+	if _quick_equip_button != null:
+		_quick_equip_button.disabled = not _state_service.has_valid_stash_selection()
 	if _remove_button != null:
 		_remove_button.disabled = not _state_service.has_valid_loadout_selection()
 
@@ -276,6 +290,17 @@ func move_selected_loadout_to_stash() -> bool:
 	if not _prep_service.move_loadout_item_to_stash(str(entry["category"]), int(entry["index"])):
 		return false
 	_state_service.reset_stash_selection()
+	refresh_all()
+	return true
+
+
+func quick_equip_selected_stash() -> bool:
+	if not _state_service.has_valid_stash_selection():
+		return false
+	var entry: Dictionary = _state_service.get_selected_stash_entry()
+	if not _prep_service.quick_equip_stash_item(str(entry["category"]), int(entry["index"])):
+		return false
+	_state_service.reset_loadout_selection()
 	refresh_all()
 	return true
 
@@ -308,14 +333,37 @@ func refresh_beacon_preview() -> void:
 	)
 
 
-func _setup_category_options(option: OptionButton) -> void:
+func refresh_localized_text() -> void:
+	var stash_key := _selected_category_key(_stash_category)
+	var loadout_key := _selected_category_key(_loadout_category)
+	_setup_category_options(_stash_category, stash_key)
+	_setup_category_options(_loadout_category, loadout_key)
+	if _prep_toggle_button != null:
+		_prep_toggle_button.text = _t("ui.lobby.open_build_prep", "Open Build Prep")
+	if _add_button != null:
+		_add_button.text = _t("ui.lobby.to_build", "To Build >")
+	if _quick_equip_button != null:
+		_quick_equip_button.text = _t("ui.lobby.quick_equip", "Quick Equip >")
+	if _remove_button != null:
+		_remove_button.text = _t("ui.lobby.to_stash", "< To Stash")
+	if _clear_loadout_button != null:
+		_clear_loadout_button.text = _t("ui.lobby.clear_build", "Clear Build")
+
+
+func _setup_category_options(option: OptionButton, preferred_key: String = "") -> void:
 	if option == null:
 		return
+	var selected_key := preferred_key if not preferred_key.is_empty() else _selected_category_key(option)
 	option.clear()
 	for entry in _loot_categories:
-		option.add_item(str(entry["label"]))
+		option.add_item(_t(str(entry.get("label_key", "")), str(entry.get("fallback", entry.get("key", "")))))
 		option.set_item_metadata(option.item_count - 1, str(entry["key"]))
-	option.select(0)
+	var target_index := 0
+	for idx in range(option.item_count):
+		if str(option.get_item_metadata(idx)) == selected_key:
+			target_index = idx
+			break
+	option.select(target_index)
 
 
 func _selected_category_key(option: OptionButton) -> String:
@@ -325,6 +373,10 @@ func _selected_category_key(option: OptionButton) -> String:
 	if idx < 0:
 		idx = 0
 	return str(option.get_item_metadata(idx))
+
+
+func _t(key: String, fallback: String) -> String:
+	return LocalizationService.text(key, fallback)
 
 
 func _show_tooltip(item: Variant) -> void:
