@@ -10,6 +10,8 @@ This format is based on Keep a Changelog and uses simple sections:
 
 ## [Unreleased]
 
+## [2.3.1] - 2026-03-01
+
 ### Added
 - Lightweight headless smoke runner for core refactor validation:
   - `scripts/tests/smoke_runner.gd`
