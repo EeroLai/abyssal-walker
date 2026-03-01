@@ -1,6 +1,7 @@
 extends RefCounted
 
 const UNKNOWN_MODIFIER_NAME := "Unknown Modifier"
+static var _data_manager_override: Variant = null
 
 
 static func summarize(modifier_ids: PackedStringArray) -> Dictionary:
@@ -74,4 +75,20 @@ static func has_modifier(modifier_id: String) -> bool:
 static func _get_modifier_data(modifier_id: String) -> Dictionary:
 	if modifier_id.is_empty():
 		return {}
-	return DataManager.get_beacon_modifier_data(modifier_id)
+	var data_manager: Variant = _get_data_manager()
+	if data_manager == null:
+		return {}
+	return data_manager.get_beacon_modifier_data(modifier_id)
+
+
+static func set_data_manager(data_manager: Variant) -> void:
+	_data_manager_override = data_manager
+
+
+static func _get_data_manager() -> Variant:
+	if _data_manager_override != null:
+		return _data_manager_override
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree == null or tree.root == null:
+		return null
+	return tree.root.get_node_or_null(^"/root/DataManager")

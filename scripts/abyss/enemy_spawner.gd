@@ -112,11 +112,14 @@ func _spawn_next_enemy() -> void:
 
 func _create_enemy(enemy_type: String) -> EnemyBase:
 	var enemy: EnemyBase = enemy_scene.instantiate()
+	var data_manager: Variant = _get_data_manager()
 
 	# 從資料載入敵人屬性
-	var enemy_data: Dictionary = DataManager.get_enemy(enemy_type)
-	if enemy_data.is_empty():
-		enemy_data = DataManager.get_enemy("slime")
+	var enemy_data: Dictionary = {}
+	if data_manager != null:
+		enemy_data = data_manager.get_enemy(enemy_type)
+	if enemy_data.is_empty() and data_manager != null:
+		enemy_data = data_manager.get_enemy("slime")
 
 	enemy.enemy_id = enemy_type
 	enemy.display_name = enemy_data.get("display_name", enemy_type)
@@ -253,3 +256,10 @@ func _roll_elite_mods(affix_count: int) -> Array[String]:
 			break
 		selected.append(choices[randi() % choices.size()])
 	return selected
+
+
+func _get_data_manager() -> Variant:
+	var tree := get_tree()
+	if tree == null or tree.root == null:
+		return null
+	return tree.root.get_node_or_null(^"/root/DataManager")

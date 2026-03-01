@@ -36,6 +36,18 @@ const MAX_INVENTORY_SIZE: int = 60
 const MAX_SKILL_GEM_INVENTORY: int = Constants.MAX_SKILL_GEM_INVENTORY
 const MAX_SUPPORT_GEM_INVENTORY: int = Constants.MAX_SUPPORT_GEM_INVENTORY
 const MAX_MODULE_INVENTORY: int = Constants.MAX_MODULE_INVENTORY
+const EQUIPMENT_SLOT_ORDER: Array[int] = [
+	StatTypes.EquipmentSlot.MAIN_HAND,
+	StatTypes.EquipmentSlot.OFF_HAND,
+	StatTypes.EquipmentSlot.HELMET,
+	StatTypes.EquipmentSlot.ARMOR,
+	StatTypes.EquipmentSlot.GLOVES,
+	StatTypes.EquipmentSlot.BOOTS,
+	StatTypes.EquipmentSlot.BELT,
+	StatTypes.EquipmentSlot.AMULET,
+	StatTypes.EquipmentSlot.RING_1,
+	StatTypes.EquipmentSlot.RING_2,
+]
 
 var current_hp: float = 100.0
 var is_dead: bool = false
@@ -147,7 +159,7 @@ func equip(item: EquipmentData) -> EquipmentData:
 	equipment[slot] = item
 	item.apply_to_stats(stats)
 
-	EventBus.equipment_changed.emit(slot, old_item, item)
+	_emit_event_bus("equipment_changed", [slot, old_item, item])
 	return old_item
 
 
@@ -174,7 +186,7 @@ func unequip(slot: StatTypes.EquipmentSlot) -> EquipmentData:
 	item.remove_from_stats(stats)
 	equipment.erase(slot)
 
-	EventBus.equipment_unequipped.emit(slot, item)
+	_emit_event_bus("equipment_unequipped", [slot, item])
 	return item
 
 
@@ -232,8 +244,7 @@ func add_material(id: String, amount: int = 1) -> void:
 	var current: int = int(materials.get(id, 0))
 	var next_count: int = current + amount
 	materials[id] = next_count
-	if GameManager != null and GameManager.has_method("set_stash_material_count"):
-		GameManager.set_stash_material_count(id, next_count)
+	_set_stash_material_count(id, next_count)
 
 
 func consume_material(id: String, amount: int = 1) -> bool:
@@ -244,13 +255,27 @@ func consume_material(id: String, amount: int = 1) -> bool:
 		return false
 	var next_count: int = current - amount
 	materials[id] = next_count
-	if GameManager != null and GameManager.has_method("set_stash_material_count"):
-		GameManager.set_stash_material_count(id, next_count)
+	_set_stash_material_count(id, next_count)
 	return true
 
 
 func get_material_count(id: String) -> int:
 	return int(materials.get(id, 0))
+
+
+func get_total_material_count() -> int:
+	var total: int = 0
+	for material_id in materials.keys():
+		total += int(materials.get(material_id, 0))
+	return total
+
+
+func sync_materials(material_snapshot: Dictionary) -> void:
+	materials.clear()
+	for material_id in material_snapshot.keys():
+		var count: int = int(material_snapshot.get(material_id, 0))
+		if count > 0:
+			materials[str(material_id)] = count
 
 
 
@@ -297,7 +322,7 @@ func equip_skill_from_inventory(index: int) -> bool:
 		_compact_skill_gem_inventory()
 
 	gem_link.set_skill_gem(gem)
-	EventBus.skill_gem_changed.emit(old, gem)
+	_emit_event_bus("skill_gem_changed", [old, gem])
 	return true
 
 
@@ -308,7 +333,7 @@ func unequip_skill_to_inventory() -> bool:
 	if not _store_skill_gem_without_merge(old):
 		return false
 	gem_link.set_skill_gem(null)
-	EventBus.skill_gem_changed.emit(old, null)
+	_emit_event_bus("skill_gem_changed", [old, null])
 	return true
 
 
@@ -324,7 +349,7 @@ func equip_support_from_inventory(index: int) -> bool:
 	_set_support_gem_in_inventory(index, null)
 	_compact_support_gem_inventory()
 	if slot_index >= 0:
-		EventBus.support_gem_changed.emit(slot_index, null, gem)
+		_emit_event_bus("support_gem_changed", [slot_index, null, gem])
 	return true
 
 
@@ -335,7 +360,7 @@ func unequip_support_to_inventory(index: int) -> bool:
 	if not _store_support_gem_without_merge(gem):
 		gem_link.set_support_gem(index, gem)
 		return false
-	EventBus.support_gem_changed.emit(index, gem, null)
+	_emit_event_bus("support_gem_changed", [index, gem, null])
 	return true
 
 
@@ -371,7 +396,7 @@ func swap_skill_with_inventory(index: int) -> bool:
 	var temp: SkillGem = skill_gem_inventory[index]
 	skill_gem_inventory[index] = old_equipped
 	gem_link.set_skill_gem(temp)
-	EventBus.skill_gem_changed.emit(old_equipped, temp)
+	_emit_event_bus("skill_gem_changed", [old_equipped, temp])
 	return true
 
 
@@ -394,7 +419,7 @@ func swap_support_with_inventory(slot_index: int, inv_index: int) -> bool:
 	if inv_gem == null:
 		gem_link.set_support_gem(slot_index, null)
 	if current_slot != inv_gem:
-		EventBus.support_gem_changed.emit(slot_index, current_slot, inv_gem)
+		_emit_event_bus("support_gem_changed", [slot_index, current_slot, inv_gem])
 	return true
 
 
@@ -1071,17 +1096,27 @@ func heal(amount: float) -> void:
 	_emit_health_changed()
 
 
+func restore_health_to_max() -> void:
+	current_hp = stats.get_stat(StatTypes.Stat.HP)
+	_emit_health_changed()
+
+
+func clamp_health_to_max() -> void:
+	current_hp = minf(current_hp, stats.get_stat(StatTypes.Stat.HP))
+	_emit_health_changed()
+
+
 func _die() -> void:
 	is_dead = true
 	stop_auto_attack()
 	died.emit()
-	EventBus.player_died.emit()
+	_emit_event_bus("player_died")
 
 
 func _emit_health_changed() -> void:
 	var max_hp := stats.get_stat(StatTypes.Stat.HP)
 	health_changed.emit(current_hp, max_hp)
-	EventBus.player_health_changed.emit(current_hp, max_hp)
+	_emit_event_bus("player_health_changed", [current_hp, max_hp])
 
 
 func apply_status_damage(amount: float, element: StatTypes.Element) -> void:
@@ -1280,7 +1315,7 @@ func equip_module_from_inventory(index: int) -> bool:
 		return false
 	var slot_index := core_board.slots.find(module)
 	if slot_index >= 0:
-		EventBus.module_changed.emit(slot_index, null, module)
+		_emit_event_bus("module_changed", [slot_index, null, module])
 	return true
 
 
@@ -1292,5 +1327,295 @@ func unequip_module_to_inventory(slot_index: int) -> bool:
 		return false
 	core_board.unequip(module, stats)
 	module_inventory.append(module)
-	EventBus.module_changed.emit(slot_index, module, null)
+	_emit_event_bus("module_changed", [slot_index, module, null])
 	return true
+
+
+func can_snapshot_build() -> bool:
+	return core_board != null and gem_link != null and stats != null
+
+
+func has_equipment_in_inventory(item: EquipmentData) -> bool:
+	if item == null:
+		return false
+	for inv_item in inventory:
+		if inv_item == item:
+			return true
+	return false
+
+
+func is_equipment_equipped(item: EquipmentData) -> bool:
+	if item == null:
+		return false
+	for slot_id in EQUIPMENT_SLOT_ORDER:
+		if get_equipped(slot_id) == item:
+			return true
+	return false
+
+
+func is_skill_gem_equipped(item: SkillGem) -> bool:
+	return item != null and gem_link != null and gem_link.skill_gem == item
+
+
+func has_skill_gem_in_inventory(item: SkillGem) -> bool:
+	if item == null:
+		return false
+	for gem in skill_gem_inventory:
+		if gem == item:
+			return true
+	return false
+
+
+func has_skill_gem_with_id(id: String) -> bool:
+	if id == "":
+		return false
+	if gem_link != null and gem_link.skill_gem != null and gem_link.skill_gem.id == id:
+		return true
+	for gem in skill_gem_inventory:
+		if gem != null and gem.id == id:
+			return true
+	return false
+
+
+func is_support_gem_equipped(item: SupportGem) -> bool:
+	if item == null or gem_link == null:
+		return false
+	for gem in gem_link.support_gems:
+		if gem == item:
+			return true
+	return false
+
+
+func has_support_gem_in_inventory(item: SupportGem) -> bool:
+	if item == null:
+		return false
+	for gem in support_gem_inventory:
+		if gem == item:
+			return true
+	return false
+
+
+func has_support_gem_with_id(id: String) -> bool:
+	if id == "":
+		return false
+	if gem_link != null:
+		for gem in gem_link.support_gems:
+			if gem != null and gem.id == id:
+				return true
+	for gem in support_gem_inventory:
+		if gem != null and gem.id == id:
+			return true
+	return false
+
+
+func is_module_equipped(item: Module) -> bool:
+	if item == null or core_board == null:
+		return false
+	for mod in core_board.slots:
+		if mod == item:
+			return true
+	return false
+
+
+func has_module_in_inventory(item: Module) -> bool:
+	if item == null:
+		return false
+	for mod in module_inventory:
+		if mod == item:
+			return true
+	return false
+
+
+func remove_equipment_reference(target: EquipmentData) -> void:
+	if target == null:
+		return
+	for i in range(inventory.size() - 1, -1, -1):
+		if inventory[i] == target:
+			inventory.remove_at(i)
+			return
+	for slot_id in EQUIPMENT_SLOT_ORDER:
+		if get_equipped(slot_id) == target:
+			unequip(slot_id)
+			return
+
+
+func remove_skill_gem_reference(target: SkillGem) -> void:
+	if target == null:
+		return
+	if gem_link != null and gem_link.skill_gem == target:
+		gem_link.set_skill_gem(null)
+		return
+	for i in range(skill_gem_inventory.size() - 1, -1, -1):
+		if get_skill_gem_in_inventory(i) == target:
+			remove_skill_gem_from_inventory(i)
+			return
+
+
+func remove_support_gem_reference(target: SupportGem) -> void:
+	if target == null:
+		return
+	if gem_link != null:
+		for i in range(gem_link.support_gems.size()):
+			if gem_link.support_gems[i] == target:
+				gem_link.set_support_gem(i, null)
+				return
+	for i in range(support_gem_inventory.size() - 1, -1, -1):
+		if get_support_gem_in_inventory(i) == target:
+			remove_support_gem_from_inventory(i)
+			return
+
+
+func remove_module_reference(target: Module) -> void:
+	if target == null:
+		return
+	for i in range(module_inventory.size() - 1, -1, -1):
+		if module_inventory[i] == target:
+			remove_module_from_inventory(i)
+			return
+	if core_board != null and stats != null:
+		for i in range(core_board.slots.size() - 1, -1, -1):
+			if core_board.slots[i] == target:
+				core_board.unequip_at(i, stats)
+				return
+
+
+func capture_build_snapshot() -> Dictionary:
+	if not can_snapshot_build():
+		return {}
+
+	var equipped_map: Dictionary = {}
+	for slot_key in equipment.keys():
+		var slot_id: int = int(slot_key)
+		var equipped_item: EquipmentData = equipment.get(slot_key) as EquipmentData
+		if equipped_item != null:
+			equipped_map[slot_id] = equipped_item.duplicate(true)
+
+	var equipped_skill_gem: SkillGem = null
+	if gem_link.skill_gem != null:
+		equipped_skill_gem = gem_link.skill_gem.duplicate(true)
+
+	return {
+		"equipment": equipped_map,
+		"inventory": _clone_resource_array(inventory),
+		"skill_gem_inventory": _clone_resource_array(skill_gem_inventory),
+		"support_gem_inventory": _clone_resource_array(support_gem_inventory),
+		"equipped_skill_gem": equipped_skill_gem,
+		"equipped_support_gems": _clone_resource_array(gem_link.support_gems),
+		"module_inventory": _clone_resource_array(module_inventory),
+		"equipped_modules": _clone_resource_array(core_board.slots),
+	}
+
+
+func apply_build_snapshot(snapshot: Dictionary) -> void:
+	if snapshot.is_empty() or not can_snapshot_build():
+		return
+
+	clear_build_state()
+
+	var equipped_map: Dictionary = snapshot.get("equipment", {})
+	for slot_id in EQUIPMENT_SLOT_ORDER:
+		var item_data: Variant = equipped_map.get(slot_id, null)
+		if item_data is EquipmentData:
+			var equipped_item: EquipmentData = (item_data as EquipmentData).duplicate(true)
+			equipped_item.slot = slot_id
+			equip(equipped_item)
+
+	var inventory_items: Array = snapshot.get("inventory", [])
+	for item_data: Variant in inventory_items:
+		if item_data is EquipmentData:
+			add_to_inventory((item_data as EquipmentData).duplicate(true))
+
+	var skill_inventory: Array = snapshot.get("skill_gem_inventory", [])
+	for i in range(mini(skill_inventory.size(), MAX_SKILL_GEM_INVENTORY)):
+		var skill_item: Variant = skill_inventory[i]
+		if skill_item is SkillGem:
+			set_skill_gem_in_inventory(i, (skill_item as SkillGem).duplicate(true))
+
+	var support_inventory: Array = snapshot.get("support_gem_inventory", [])
+	for i in range(mini(support_inventory.size(), MAX_SUPPORT_GEM_INVENTORY)):
+		var support_item: Variant = support_inventory[i]
+		if support_item is SupportGem:
+			set_support_gem_in_inventory(i, (support_item as SupportGem).duplicate(true))
+
+	var equipped_skill: Variant = snapshot.get("equipped_skill_gem", null)
+	if equipped_skill is SkillGem:
+		gem_link.set_skill_gem((equipped_skill as SkillGem).duplicate(true))
+
+	var equipped_supports: Array = snapshot.get("equipped_support_gems", [])
+	for i in range(mini(equipped_supports.size(), Constants.MAX_SUPPORT_GEMS)):
+		var support_data: Variant = equipped_supports[i]
+		if support_data is SupportGem:
+			gem_link.set_support_gem(i, (support_data as SupportGem).duplicate(true))
+
+	var equipped_modules: Array = snapshot.get("equipped_modules", [])
+	for module_data: Variant in equipped_modules:
+		if module_data is Module:
+			var mod: Module = (module_data as Module).duplicate_module()
+			if not core_board.equip(mod, stats):
+				add_module_to_inventory(mod)
+
+	var inventory_modules: Array = snapshot.get("module_inventory", [])
+	for module_data: Variant in inventory_modules:
+		if module_data is Module:
+			add_module_to_inventory((module_data as Module).duplicate_module())
+
+	restore_health_to_max()
+
+
+func clear_build_state() -> void:
+	if not can_snapshot_build():
+		return
+	for slot_id in EQUIPMENT_SLOT_ORDER:
+		unequip(slot_id)
+	inventory.clear()
+	skill_gem_inventory.clear()
+	support_gem_inventory.clear()
+	gem_link.set_skill_gem(null)
+	gem_link.support_gems.clear()
+	while core_board.slots.size() > 0:
+		core_board.unequip_at(0, stats)
+	module_inventory.clear()
+
+
+func _clone_resource_array(source: Array) -> Array:
+	var cloned: Array = []
+	for value: Variant in source:
+		if value == null:
+			cloned.append(null)
+		elif value is Module:
+			cloned.append((value as Module).duplicate_module())
+		elif value is Resource:
+			cloned.append((value as Resource).duplicate(true))
+		else:
+			cloned.append(value)
+	return cloned
+
+
+func _emit_event_bus(signal_name: StringName, args: Array = []) -> void:
+	var event_bus: Variant = _get_event_bus()
+	if event_bus == null:
+		return
+	var parameters: Array = [signal_name]
+	parameters.append_array(args)
+	event_bus.callv("emit_signal", parameters)
+
+
+func _set_stash_material_count(material_id: String, count: int) -> void:
+	var game_manager: Variant = _get_game_manager()
+	if game_manager == null:
+		return
+	game_manager.call("set_stash_material_count", material_id, count)
+
+
+func _get_event_bus() -> Variant:
+	var tree := get_tree()
+	if tree == null or tree.root == null:
+		return null
+	return tree.root.get_node_or_null(^"/root/EventBus")
+
+
+func _get_game_manager() -> Variant:
+	var tree := get_tree()
+	if tree == null or tree.root == null:
+		return null
+	return tree.root.get_node_or_null(^"/root/GameManager")

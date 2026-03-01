@@ -33,6 +33,7 @@ var progression_panel: PanelContainer = null
 var damage_vignette: Panel = null
 var _last_hp_value: float = -1.0
 var _damage_vignette_tween: Tween = null
+var tracked_player: Player = null
 
 const PICKUP_FEED_MAX: int = 6
 const PICKUP_SHOW_TIME: float = 2.6
@@ -117,6 +118,12 @@ func _on_floor_entered(floor_number: int) -> void:
 	update_floor(floor_number)
 
 
+func bind_player(player_node: Player) -> void:
+	tracked_player = player_node
+	if tracked_player != null:
+		update_inventory(tracked_player.get_inventory_size())
+
+
 func update_floor(floor_number: int) -> void:
 	if floor_label:
 		floor_label.text = "深淵 %d 層" % floor_number
@@ -149,10 +156,8 @@ func update_enemy_count(count: int) -> void:
 
 
 func _on_item_picked_up(_item_data: Variant) -> void:
-	var game := get_tree().current_scene
-	if game and "player" in game and game.player:
-		var player: Player = game.player
-		update_inventory(player.get_inventory_size())
+	if tracked_player != null:
+		update_inventory(tracked_player.get_inventory_size())
 
 	_show_pickup_message(_item_data)
 
@@ -163,19 +168,13 @@ func update_inventory(count: int) -> void:
 
 
 func _on_status_applied(target: Node, status_type: String, stacks: int) -> void:
-	var game := get_tree().current_scene
-	if game == null or not ("player" in game):
-		return
-	if target != game.player:
+	if tracked_player == null or target != tracked_player:
 		return
 	_add_status_icon(status_type, stacks)
 
 
 func _on_status_removed(target: Node, status_type: String) -> void:
-	var game := get_tree().current_scene
-	if game == null or not ("player" in game):
-		return
-	if target != game.player:
+	if tracked_player == null or target != tracked_player:
 		return
 	_remove_status_icon(status_type)
 

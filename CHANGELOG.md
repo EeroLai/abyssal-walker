@@ -10,6 +10,25 @@ This format is based on Keep a Changelog and uses simple sections:
 
 ## [Unreleased]
 
+### Added
+- Lightweight headless smoke runner for core refactor validation:
+  - `scripts/tests/smoke_runner.gd`
+- Dedicated run-domain services for session, inventory, flow, records, telemetry, runtime, command, and query responsibilities.
+- Dedicated scene-support services for:
+  - Game run flow, progression, pickups, panels, input, outcomes, and floor setup
+  - Lobby presenter, binder, state, grid rendering, tooltip, and prep flow
+
+### Changed
+- Refactored `GameManager` toward a thin facade by moving most read/write state handling into focused services.
+- Refactored `game.gd` and `lobby.gd` toward scene-entry controllers instead of large all-in-one scripts.
+- Reorganized `scripts/main` support code into feature folders:
+  - `scripts/main/game`
+  - `scripts/main/lobby`
+- Replaced several compile-time autoload singleton references with root lookup / service fallback so core scripts can load more safely in isolation.
+
+### Fixed
+- Fixed hidden compile-time coupling that prevented headless smoke validation when scripts were loaded outside the usual autoload-heavy scene flow.
+
 ## [2.3.0] - 2026-02-28
 
 ### Added

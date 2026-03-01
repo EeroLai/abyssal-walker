@@ -39,7 +39,9 @@ const DETECTION_RADIUS := 300.0
 
 func _ready() -> void:
 	# 連接敵人死亡事件
-	EventBus.enemy_died.connect(_on_enemy_died)
+	var event_bus: Variant = _get_event_bus()
+	if event_bus != null:
+		event_bus.connect("enemy_died", Callable(self, "_on_enemy_died"))
 
 
 func _process(delta: float) -> void:
@@ -263,3 +265,10 @@ func _on_enemy_died(enemy: Node, _position: Vector2) -> void:
 		player.current_target = null
 		player.stop_auto_attack()
 		current_state = AIState.IDLE
+
+
+func _get_event_bus() -> Variant:
+	var tree := get_tree()
+	if tree == null or tree.root == null:
+		return null
+	return tree.root.get_node_or_null(^"/root/EventBus")

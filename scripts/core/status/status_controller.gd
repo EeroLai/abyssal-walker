@@ -129,19 +129,19 @@ func _apply_dot_damage(amount: float, element: StatTypes.Element, status_type: S
 	if owner_node.has_method("apply_status_damage"):
 		owner_node.apply_status_damage(amount, element)
 
-	EventBus.status_tick.emit(owner_node, status_type, amount)
+	_emit_event_bus("status_tick", [owner_node, status_type, amount])
 
 
 func _on_status_applied(status_type: String, effect: StatusEffect) -> void:
 	if owner_node == null or not is_instance_valid(owner_node):
 		return
-	EventBus.status_applied.emit(owner_node, status_type, effect.stacks)
+	_emit_event_bus("status_applied", [owner_node, status_type, effect.stacks])
 
 
 func _on_status_removed(status_type: String, effect: StatusEffect) -> void:
 	if owner_node == null or not is_instance_valid(owner_node):
 		return
-	EventBus.status_removed.emit(owner_node, status_type)
+	_emit_event_bus("status_removed", [owner_node, status_type])
 
 
 func _is_owner_moving() -> bool:
@@ -151,3 +151,19 @@ func _is_owner_moving() -> bool:
 		var body: CharacterBody2D = owner_node
 		return body.velocity.length() > 1.0
 	return false
+
+
+func _emit_event_bus(signal_name: StringName, args: Array = []) -> void:
+	var event_bus: Variant = _get_event_bus()
+	if event_bus == null:
+		return
+	var parameters: Array = [signal_name]
+	parameters.append_array(args)
+	event_bus.callv("emit_signal", parameters)
+
+
+func _get_event_bus() -> Variant:
+	var tree := get_tree()
+	if tree == null or tree.root == null:
+		return null
+	return tree.root.get_node_or_null(^"/root/EventBus")

@@ -29,6 +29,7 @@ var item_kind: String = ""
 var _is_collected: bool = false
 var _is_filter_hidden: bool = false
 var _base_beam_visible: bool = false
+var pickup_handler: Callable = Callable()
 
 # 品質對應顏色
 const RARITY_COLORS: Dictionary = {
@@ -112,7 +113,8 @@ func _process(delta: float) -> void:
 			_do_pickup()
 
 
-func setup(item: Variant) -> void:
+func setup(item: Variant, pickup_callback: Callable = Callable()) -> void:
+	pickup_handler = pickup_callback
 	if item is EquipmentData:
 		equipment = item
 		gem = null
@@ -429,10 +431,9 @@ func _do_pickup() -> void:
 		queue_free()
 		return
 
-	var game := get_tree().current_scene
 	var pickup_success := false
-	if game != null and game.has_method("try_pickup_item"):
-		pickup_success = bool(game.call("try_pickup_item", payload))
+	if pickup_handler.is_valid():
+		pickup_success = bool(pickup_handler.call(payload))
 	else:
 		# Fallback: keep previous behavior if Game handler is unavailable.
 		EventBus.item_picked_up.emit(payload)
