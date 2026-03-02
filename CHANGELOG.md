@@ -10,15 +10,23 @@ This format is based on Keep a Changelog and uses simple sections:
 
 ## [Unreleased]
 
-## [2.4.1] - 2026-03-02
+## [2.5.0] - 2026-03-02
 
 ### Added
 - Dedicated `PlayerState` model for persistent player-build data.
 - `GameManager` / query access to the persistent player state object for future build-state driven flows.
+- First-run onboarding flow with a dedicated `TutorialService`, overlay-driven lobby steps, and a first-time extraction prompt.
+- Lobby `Guide` panel with replay/reset controls so players can re-open onboarding help after the first visit.
+- First-drop pickup teaching flow that highlights ground loot and explains the `[Z]` magnet pickup control.
 
 ### Changed
 - Persistent player-build storage now uses `PlayerState` instead of a bare snapshot dictionary inside run records.
 - Player build snapshot capture/apply logic now delegates through `PlayerState`, separating build data concerns from the scene-bound `Player` node.
+- Lobby UI now exposes tutorial anchors and a persistent guide entry point to support onboarding without hardcoding tutorial logic into scene flow.
+- Tutorial, guide, and first-time pickup/extraction copy now reads through localization tables instead of inline script strings.
+
+### Fixed
+- Reduced early-run confusion around extraction and pickup controls by surfacing first-time contextual instruction at the moment those actions become relevant.
 
 ## [2.4.0] - 2026-03-01
 

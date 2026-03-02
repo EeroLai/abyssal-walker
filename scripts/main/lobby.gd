@@ -4,6 +4,7 @@ const GAME_SCENE := "res://scenes/main/game.tscn"
 const LOBBY_BUILD_PANEL_COORDINATOR := preload("res://scripts/main/lobby/lobby_build_panel_coordinator.gd")
 const LOBBY_BUILD_SESSION_SERVICE := preload("res://scripts/main/lobby/lobby_build_session_service.gd")
 const LOBBY_GRID_RENDERER := preload("res://scripts/main/lobby/lobby_grid_renderer.gd")
+const LOBBY_GUIDE_PANEL_SCENE := preload("res://scenes/ui/lobby_guide_panel.tscn")
 const LOBBY_PRESENTER := preload("res://scripts/main/lobby/lobby_presenter.gd")
 const LOBBY_PREP_SERVICE := preload("res://scripts/main/lobby/lobby_prep_service.gd")
 const LOBBY_STATE_SERVICE := preload("res://scripts/main/lobby/lobby_state_service.gd")
@@ -69,6 +70,8 @@ var _lobby_state_service: LobbyStateService = LOBBY_STATE_SERVICE.new()
 var _lobby_tooltip_presenter: LobbyTooltipPresenter = LOBBY_TOOLTIP_PRESENTER.new()
 var _lobby_view_binder: LobbyViewBinder = LOBBY_VIEW_BINDER.new()
 var _build_buttons: Dictionary = {}
+var _guide_button: Button = null
+var _guide_panel: Control = null
 var _language_row: HBoxContainer = null
 var _language_label: Label = null
 var _language_option: OptionButton = null
@@ -77,6 +80,7 @@ var _language_option: OptionButton = null
 func _ready() -> void:
 	prep_overlay.visible = false
 	_setup_build_tools()
+	_setup_guide_panel()
 	_setup_language_selector()
 	_apply_localized_texts()
 	_lobby_presenter.setup(
@@ -119,6 +123,7 @@ func _ready() -> void:
 	_lobby_presenter.refresh_all()
 	if not LocalizationService.locale_changed.is_connected(_on_locale_changed):
 		LocalizationService.locale_changed.connect(_on_locale_changed)
+	TutorialService.register_lobby(self)
 
 
 func _process(_delta: float) -> void:
@@ -144,23 +149,40 @@ func _bind_actions() -> void:
 func _on_prep_toggle_pressed() -> void:
 	prep_overlay.visible = true
 	_lobby_presenter.refresh_all()
+	TutorialService.notify_lobby_build_prep_opened(self)
 
 
 func _on_prep_close_pressed() -> void:
 	prep_overlay.visible = false
 	_lobby_presenter.hide_tooltip()
+	TutorialService.notify_lobby_build_prep_closed(self)
 
 
 func _on_start_pressed() -> void:
 	_commit_lobby_build_session()
 	if not _lobby_presenter.start_selected_beacon(GameManager.OperationType.NORMAL):
 		return
+	TutorialService.notify_operation_started()
 	get_tree().change_scene_to_file(GAME_SCENE)
 
 
 func _on_quit_pressed() -> void:
 	_commit_lobby_build_session()
 	get_tree().quit()
+
+
+func _on_guide_pressed() -> void:
+	if _guide_panel != null and _guide_panel.has_method("open"):
+		_guide_panel.call("open")
+
+
+func _on_guide_replay_requested() -> void:
+	TutorialService.restart_lobby_intro(self)
+
+
+func _on_guide_reset_requested() -> void:
+	TutorialService.reset_all_progress()
+	TutorialService.restart_lobby_intro(self)
 
 
 func _setup_build_tools() -> void:
@@ -172,6 +194,34 @@ func _setup_build_tools() -> void:
 		Callable(self, "_on_build_panel_closed")
 	)
 	_create_build_button_row()
+
+
+func _setup_guide_panel() -> void:
+	if _guide_panel == null:
+		_guide_panel = LOBBY_GUIDE_PANEL_SCENE.instantiate() as Control
+		if _guide_panel != null:
+			add_child(_guide_panel)
+			if _guide_panel.has_signal("replay_requested") and not _guide_panel.is_connected("replay_requested", Callable(self, "_on_guide_replay_requested")):
+				_guide_panel.connect("replay_requested", Callable(self, "_on_guide_replay_requested"))
+			if _guide_panel.has_signal("reset_requested") and not _guide_panel.is_connected("reset_requested", Callable(self, "_on_guide_reset_requested")):
+				_guide_panel.connect("reset_requested", Callable(self, "_on_guide_reset_requested"))
+	_ensure_guide_button()
+
+
+func _ensure_guide_button() -> void:
+	if buttons_row == null or _guide_button != null:
+		return
+	_guide_button = Button.new()
+	_guide_button.custom_minimum_size = Vector2(120, 44)
+	if prep_toggle_button != null:
+		for style_name in ["normal", "hover", "pressed", "focus"]:
+			var stylebox := prep_toggle_button.get_theme_stylebox(style_name)
+			if stylebox != null:
+				_guide_button.add_theme_stylebox_override(style_name, stylebox)
+	_guide_button.pressed.connect(_on_guide_pressed)
+	buttons_row.add_child(_guide_button)
+	if quit_button != null:
+		buttons_row.move_child(_guide_button, quit_button.get_index())
 
 
 func _setup_language_selector() -> void:
@@ -307,6 +357,8 @@ func _apply_localized_texts() -> void:
 		transfer_hint_label.text = _t("ui.lobby.transfer_hint", "Select an item then transfer.")
 	if quit_button != null:
 		quit_button.text = _t("ui.lobby.quit", "Quit")
+	if _guide_button != null:
+		_guide_button.text = _guide_button_text()
 	_refresh_language_selector()
 	_refresh_build_button_labels()
 
@@ -345,3 +397,24 @@ func _locale_display_name(locale: String) -> String:
 
 func _t(key: String, fallback: String) -> String:
 	return LocalizationService.text(key, fallback)
+
+
+func _guide_button_text() -> String:
+	return _t("ui.lobby.guide", "Guide")
+
+
+func get_tutorial_anchor(anchor_id: String) -> Control:
+	match anchor_id:
+		"prep_toggle":
+			return prep_toggle_button
+		"quick_equip":
+			return quick_equip_button
+		"start_button":
+			return start_button
+		"beacon_card":
+			return $RootPanel/Content/BeaconCard
+	return null
+
+
+func is_build_prep_open() -> bool:
+	return prep_overlay != null and prep_overlay.visible

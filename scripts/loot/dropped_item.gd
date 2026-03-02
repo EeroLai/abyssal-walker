@@ -55,6 +55,8 @@ const GEM_COLORS: Dictionary = {
 
 const GEM_BEAM_HEIGHT := 50.0
 const MODULE_BEAM_HEIGHT := 45.0
+const TUTORIAL_HIGHLIGHT_RADIUS := 28.0
+const TUTORIAL_HIGHLIGHT_SEGMENTS := 24
 
 # 材料顏色
 const MATERIAL_COLORS: Dictionary = {
@@ -410,6 +412,69 @@ func _create_light_beam(height: float, color: Color) -> void:
 	var texture := ImageTexture.create_from_image(image)
 	light_beam.texture = texture
 	light_beam.position = Vector2(0, -height / 2 - 8)
+
+
+func play_tutorial_highlight() -> void:
+	if not is_inside_tree():
+		call_deferred("play_tutorial_highlight")
+		return
+	if get_node_or_null("TutorialHighlight") != null:
+		return
+
+	var ring := Line2D.new()
+	ring.name = "TutorialHighlight"
+	ring.width = 3.0
+	ring.default_color = _tutorial_highlight_color()
+	ring.antialiased = true
+	ring.closed = true
+	ring.z_index = 3
+	ring.points = _tutorial_highlight_points()
+	ring.scale = Vector2(0.75, 0.75)
+	ring.modulate = Color(1.0, 1.0, 1.0, 0.0)
+	add_child(ring)
+
+	var ring_tween: Tween = create_tween()
+	ring_tween.set_parallel(true)
+	ring_tween.tween_property(ring, "modulate:a", 1.0, 0.18)
+	ring_tween.tween_property(ring, "scale", Vector2(1.15, 1.15), 0.18)
+	ring_tween.chain()
+	ring_tween.set_parallel(true)
+	ring_tween.tween_property(ring, "modulate:a", 0.0, 0.7)
+	ring_tween.tween_property(ring, "scale", Vector2(1.75, 1.75), 0.7)
+	ring_tween.chain()
+	ring_tween.tween_callback(Callable(ring, "queue_free"))
+
+	if sprite != null:
+		var sprite_tween: Tween = create_tween()
+		sprite.scale = Vector2.ONE
+		sprite_tween.tween_property(sprite, "scale", Vector2(1.18, 1.18), 0.16)
+		sprite_tween.tween_property(sprite, "scale", Vector2.ONE, 0.24)
+
+	if light_beam != null and _base_beam_visible:
+		var beam_tween: Tween = create_tween()
+		light_beam.scale = Vector2.ONE
+		beam_tween.tween_property(light_beam, "scale", Vector2(1.1, 1.0), 0.16)
+		beam_tween.tween_property(light_beam, "scale", Vector2.ONE, 0.24)
+
+
+func _tutorial_highlight_points() -> PackedVector2Array:
+	var points := PackedVector2Array()
+	for i in range(TUTORIAL_HIGHLIGHT_SEGMENTS):
+		var angle := TAU * float(i) / float(TUTORIAL_HIGHLIGHT_SEGMENTS)
+		points.append(Vector2(cos(angle), sin(angle)) * TUTORIAL_HIGHLIGHT_RADIUS)
+	return points
+
+
+func _tutorial_highlight_color() -> Color:
+	if equipment != null:
+		return RARITY_COLORS.get(equipment.rarity, Color.WHITE)
+	if gem != null:
+		return GEM_COLORS.get(_get_gem_type(), Color.WHITE)
+	if module != null:
+		return module.get_type_color()
+	if material_id != "":
+		return MATERIAL_COLORS.get(material_id, Color(0.8, 0.8, 0.8))
+	return Color(0.9, 0.95, 1.0)
 
 
 func start_magnet(target: Node2D) -> void:

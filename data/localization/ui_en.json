@@ -23,6 +23,7 @@
   "ui.lobby.baseline_ready": "Baseline Ready",
   "ui.lobby.activate_beacon": "Activate Beacon",
   "ui.lobby.start_baseline": "Start Baseline Dive",
+  "ui.lobby.guide": "Guide",
   "ui.lobby.quit": "Quit",
   "ui.lobby.open_build_prep": "Open Build Prep",
   "ui.lobby.build_preparation": "Build Preparation",
@@ -135,5 +136,23 @@
   "ui.crafting.material_counts": "Alter: {alter} | Augment: {augment} | Refine: {refine}",
   "ui.crafting.alter": "Alter",
   "ui.crafting.augment": "Augment",
-  "ui.crafting.refine": "Refine"
+  "ui.crafting.refine": "Refine",
+
+  "ui.tutorial.continue": "Continue",
+  "ui.tutorial.skip": "Skip Tutorial",
+  "ui.tutorial.lobby_prep_title": "Prepare Before You Dive",
+  "ui.tutorial.lobby_prep_body": "Open Build Prep before your first run. It is where you move gear from stash into your active build.",
+  "ui.tutorial.lobby_build_title": "Build Prep",
+  "ui.tutorial.lobby_build_body": "Left side is stash, right side is your current build. Use Quick Equip if you want a fast starter loadout.",
+  "ui.tutorial.lobby_beacon_title": "Choose The Dive",
+  "ui.tutorial.lobby_beacon_body": "Pick a Beacon from the grid, or use Baseline Dive when inventory is empty. Then press Start to enter the abyss.",
+  "ui.tutorial.extraction_title": "Extraction Window",
+  "ui.tutorial.extraction_body": "Press [E] to extract safely with your current rewards, or [F] to keep pushing deeper for more loot. If you do nothing, the run continues.",
+  "ui.tutorial.pickup_hint": "Nearby loot: press [Z] to pull dropped items toward you.",
+
+  "ui.guide.title": "Field Guide",
+  "ui.guide.close": "Close",
+  "ui.guide.replay": "Replay Intro",
+  "ui.guide.reset": "Reset Tutorial",
+  "ui.guide.body": "[b]Core Loop[/b]\n1. Open Build Prep in the lobby.\n2. Move loot from stash into your current build.\n3. Choose a Beacon or start a Baseline Dive.\n4. Dive, loot, and decide when to extract.\n\n[b]Build Prep[/b]\n- Left side is stash.\n- Right side is your current build.\n- Quick Equip is the fastest way to start a run.\n\n[b]Run Basics[/b]\n- Your character attacks automatically.\n- Movement and extraction timing are your main decisions.\n- Press [Z] to pull nearby loot.\n- Press [I], [K], [M] to open build panels during a run.\n\n[b]Risk And Reward[/b]\n- Extracting secures your current rewards.\n- Failing a run loses backpack loot.\n- Beacons change depth, lives, and run modifiers."
 }

@@ -63,6 +63,12 @@ func run_extraction_window(
 	extraction_selected = false
 	extraction_decided = false
 	GameManager.open_extraction_window(floor_number, duration)
+	if hud != null and hud.has_method("set_extraction_prompt"):
+		hud.set_extraction_prompt(
+			true,
+			"Extraction window (%d sec left)\n[E] Extract now    [F] Continue\nNo choice: auto-continue" % int(ceili(duration))
+		)
+	await TutorialService.maybe_show_first_extraction_tip(hud)
 
 	var elapsed: float = 0.0
 	while elapsed < duration and not extraction_decided:

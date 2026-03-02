@@ -289,6 +289,7 @@ func _spawn_dropped_item(item: Variant, drop_position: Vector2) -> void:
 	dropped.global_position = drop_position + Vector2(randf_range(-20, 20), randf_range(-20, 20))
 	dropped.setup(item, Callable(self, "try_pickup_item"))
 	add_child(dropped)
+	TutorialService.maybe_show_first_drop_hint(dropped)
 
 	if item is EquipmentData:
 		EventBus.equipment_dropped.emit(item, drop_position)

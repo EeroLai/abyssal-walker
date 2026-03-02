@@ -1,4 +1,4 @@
-﻿class_name HUD
+class_name HUD
 extends Control
 
 signal challenge_failed_floor_requested
@@ -789,3 +789,10 @@ func _t(key: String, fallback: String) -> String:
 
 func _fmt(key: String, replacements: Dictionary, fallback: String) -> String:
 	return LocalizationService.format(key, replacements, fallback)
+
+
+func get_tutorial_anchor(anchor_id: String) -> Control:
+	match anchor_id:
+		"extraction_prompt":
+			return extraction_prompt_panel
+	return null
