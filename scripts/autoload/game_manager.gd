@@ -346,6 +346,10 @@ func get_persistent_player_build_snapshot() -> Dictionary:
 	return _query_service.get_persistent_player_build_snapshot()
 
 
+func get_persistent_player_state() -> PlayerState:
+	return _query_service.get_persistent_player_state()
+
+
 func add_loot_to_run_backpack(item: Variant) -> void:
 	_command_service.add_loot_to_run_backpack(item)
 

@@ -1,13 +1,13 @@
 class_name RunRecordsService
 extends RefCounted
 
-var persistent_player_build: Dictionary = {}
+var persistent_player_state: PlayerState = PlayerState.new()
 var last_run_extracted_summary: Dictionary = {}
 var last_run_failed_summary: Dictionary = {}
 
 
 func has_persistent_player_build() -> bool:
-	return not persistent_player_build.is_empty()
+	return not persistent_player_state.is_empty()
 
 
 func save_persistent_player_build_from_player(player: Player) -> void:
@@ -15,14 +15,11 @@ func save_persistent_player_build_from_player(player: Player) -> void:
 		return
 	if not player.can_snapshot_build():
 		return
-	persistent_player_build = player.capture_build_snapshot()
+	persistent_player_state.capture_from_player(player)
 
 
 func save_persistent_player_build_snapshot(snapshot: Dictionary) -> void:
-	if snapshot.is_empty():
-		persistent_player_build = {}
-		return
-	persistent_player_build = snapshot.duplicate(true)
+	persistent_player_state.load_snapshot(snapshot)
 
 
 func apply_persistent_player_build_to_player(player: Player) -> void:
@@ -30,13 +27,17 @@ func apply_persistent_player_build_to_player(player: Player) -> void:
 		return
 	if not player.can_snapshot_build():
 		return
-	if persistent_player_build.is_empty():
+	if persistent_player_state.is_empty():
 		return
-	player.apply_build_snapshot(persistent_player_build)
+	persistent_player_state.apply_to_player(player)
 
 
 func get_persistent_player_build_snapshot() -> Dictionary:
-	return persistent_player_build.duplicate(true)
+	return persistent_player_state.to_snapshot()
+
+
+func get_persistent_player_state() -> PlayerState:
+	return persistent_player_state.duplicate_state()
 
 
 func record_extracted_summary(summary: Dictionary) -> void:

@@ -89,6 +89,10 @@ func get_persistent_player_build_snapshot() -> Dictionary:
 	return _run_records_service.get_persistent_player_build_snapshot()
 
 
+func get_persistent_player_state() -> PlayerState:
+	return _run_records_service.get_persistent_player_state()
+
+
 func has_persistent_player_build() -> bool:
 	return _run_records_service.has_persistent_player_build()
 

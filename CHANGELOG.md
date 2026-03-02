@@ -10,6 +10,16 @@ This format is based on Keep a Changelog and uses simple sections:
 
 ## [Unreleased]
 
+## [2.4.1] - 2026-03-02
+
+### Added
+- Dedicated `PlayerState` model for persistent player-build data.
+- `GameManager` / query access to the persistent player state object for future build-state driven flows.
+
+### Changed
+- Persistent player-build storage now uses `PlayerState` instead of a bare snapshot dictionary inside run records.
+- Player build snapshot capture/apply logic now delegates through `PlayerState`, separating build data concerns from the scene-bound `Player` node.
+
 ## [2.4.0] - 2026-03-01
 
 ### Added

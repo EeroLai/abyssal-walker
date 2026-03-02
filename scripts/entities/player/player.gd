@@ -1554,84 +1554,17 @@ func remove_module_reference(target: Module) -> void:
 func capture_build_snapshot() -> Dictionary:
 	if not can_snapshot_build():
 		return {}
-
-	var equipped_map: Dictionary = {}
-	for slot_key in equipment.keys():
-		var slot_id: int = int(slot_key)
-		var equipped_item: EquipmentData = equipment.get(slot_key) as EquipmentData
-		if equipped_item != null:
-			equipped_map[slot_id] = equipped_item.duplicate(true)
-
-	var equipped_skill_gem: SkillGem = null
-	if gem_link.skill_gem != null:
-		equipped_skill_gem = gem_link.skill_gem.duplicate(true)
-
-	return {
-		"equipment": equipped_map,
-		"inventory": _clone_resource_array(inventory),
-		"skill_gem_inventory": _clone_resource_array(skill_gem_inventory),
-		"support_gem_inventory": _clone_resource_array(support_gem_inventory),
-		"equipped_skill_gem": equipped_skill_gem,
-		"equipped_support_gems": _clone_resource_array(gem_link.support_gems),
-		"module_inventory": _clone_resource_array(module_inventory),
-		"equipped_modules": _clone_resource_array(core_board.slots),
-	}
+	var state := PlayerState.new()
+	state.capture_from_player(self)
+	return state.to_snapshot()
 
 
 func apply_build_snapshot(snapshot: Dictionary) -> void:
 	if snapshot.is_empty() or not can_snapshot_build():
 		return
-
-	clear_build_state()
-
-	var equipped_map: Dictionary = snapshot.get("equipment", {})
-	for slot_id in EQUIPMENT_SLOT_ORDER:
-		var item_data: Variant = equipped_map.get(slot_id, null)
-		if item_data is EquipmentData:
-			var equipped_item: EquipmentData = (item_data as EquipmentData).duplicate(true)
-			equipped_item.slot = slot_id
-			equip(equipped_item)
-
-	var inventory_items: Array = snapshot.get("inventory", [])
-	for item_data: Variant in inventory_items:
-		if item_data is EquipmentData:
-			add_to_inventory((item_data as EquipmentData).duplicate(true))
-
-	var skill_inventory: Array = snapshot.get("skill_gem_inventory", [])
-	for i in range(mini(skill_inventory.size(), MAX_SKILL_GEM_INVENTORY)):
-		var skill_item: Variant = skill_inventory[i]
-		if skill_item is SkillGem:
-			set_skill_gem_in_inventory(i, (skill_item as SkillGem).duplicate(true))
-
-	var support_inventory: Array = snapshot.get("support_gem_inventory", [])
-	for i in range(mini(support_inventory.size(), MAX_SUPPORT_GEM_INVENTORY)):
-		var support_item: Variant = support_inventory[i]
-		if support_item is SupportGem:
-			set_support_gem_in_inventory(i, (support_item as SupportGem).duplicate(true))
-
-	var equipped_skill: Variant = snapshot.get("equipped_skill_gem", null)
-	if equipped_skill is SkillGem:
-		gem_link.set_skill_gem((equipped_skill as SkillGem).duplicate(true))
-
-	var equipped_supports: Array = snapshot.get("equipped_support_gems", [])
-	for i in range(mini(equipped_supports.size(), Constants.MAX_SUPPORT_GEMS)):
-		var support_data: Variant = equipped_supports[i]
-		if support_data is SupportGem:
-			gem_link.set_support_gem(i, (support_data as SupportGem).duplicate(true))
-
-	var equipped_modules: Array = snapshot.get("equipped_modules", [])
-	for module_data: Variant in equipped_modules:
-		if module_data is Module:
-			var mod: Module = (module_data as Module).duplicate_module()
-			if not core_board.equip(mod, stats):
-				add_module_to_inventory(mod)
-
-	var inventory_modules: Array = snapshot.get("module_inventory", [])
-	for module_data: Variant in inventory_modules:
-		if module_data is Module:
-			add_module_to_inventory((module_data as Module).duplicate_module())
-
-	restore_health_to_max()
+	var state := PlayerState.new()
+	state.load_snapshot(snapshot)
+	state.apply_to_player(self)
 
 
 func clear_build_state() -> void:
@@ -1647,20 +1580,6 @@ func clear_build_state() -> void:
 	while core_board.slots.size() > 0:
 		core_board.unequip_at(0, stats)
 	module_inventory.clear()
-
-
-func _clone_resource_array(source: Array) -> Array:
-	var cloned: Array = []
-	for value: Variant in source:
-		if value == null:
-			cloned.append(null)
-		elif value is Module:
-			cloned.append((value as Module).duplicate_module())
-		elif value is Resource:
-			cloned.append((value as Resource).duplicate(true))
-		else:
-			cloned.append(value)
-	return cloned
 
 
 func _emit_event_bus(signal_name: StringName, args: Array = []) -> void:
