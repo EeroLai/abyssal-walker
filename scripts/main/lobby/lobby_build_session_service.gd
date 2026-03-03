@@ -6,6 +6,12 @@ const CATEGORY_EQUIPMENT := "equipment"
 const CATEGORY_SKILL_GEMS := "skill_gems"
 const CATEGORY_SUPPORT_GEMS := "support_gems"
 const CATEGORY_MODULES := "modules"
+const STARTER_AUTO_EQUIP_SLOTS: Array[int] = [
+	StatTypes.EquipmentSlot.HELMET,
+	StatTypes.EquipmentSlot.ARMOR,
+	StatTypes.EquipmentSlot.BOOTS,
+	StatTypes.EquipmentSlot.BELT,
+]
 
 var _host: Node = null
 var _preview_player: Player = null
@@ -180,21 +186,28 @@ func _apply_starter_preview_build(player: Player) -> void:
 	if data_manager == null:
 		return
 	var starter_equipment_ids: Array[String] = data_manager.get_starter_equipment_ids()
+	var primary_weapon_equipped: bool = false
 	for i in range(starter_equipment_ids.size()):
 		var base_id: String = starter_equipment_ids[i]
-		var weapon: EquipmentData = ItemGenerator.generate_equipment(
+		var equipment: EquipmentData = ItemGenerator.generate_equipment(
 			base_id,
 			StatTypes.Rarity.WHITE,
 			1
 		)
-		if weapon == null:
+		if equipment == null:
 			continue
-		if i == 0:
-			var replaced_item: EquipmentData = player.equip(weapon)
+		if equipment.slot == StatTypes.EquipmentSlot.MAIN_HAND and not primary_weapon_equipped:
+			var replaced_item: EquipmentData = player.equip(equipment)
 			if replaced_item != null:
 				player.add_to_inventory(replaced_item)
+			primary_weapon_equipped = true
 			continue
-		player.add_to_inventory(weapon)
+		if _should_auto_equip_starter_item(player, equipment):
+			var displaced_item: EquipmentData = player.equip(equipment)
+			if displaced_item != null:
+				player.add_to_inventory(displaced_item)
+			continue
+		player.add_to_inventory(equipment)
 
 	for skill_gem_id in data_manager.get_starter_skill_gem_ids():
 		var skill_gem: SkillGem = data_manager.create_skill_gem(skill_gem_id)
@@ -450,9 +463,25 @@ func _ensure_starter_equipment_present(player: Player) -> bool:
 			StatTypes.Rarity.WHITE,
 			1
 		)
-		if equipment != null and player.add_to_inventory(equipment):
+		if equipment == null:
+			continue
+		if _should_auto_equip_starter_item(player, equipment):
+			var displaced_item: EquipmentData = player.equip(equipment)
+			if displaced_item != null:
+				player.add_to_inventory(displaced_item)
+			changed = true
+			continue
+		if player.add_to_inventory(equipment):
 			changed = true
 	return changed
+
+
+func _should_auto_equip_starter_item(player: Player, equipment: EquipmentData) -> bool:
+	if player == null or equipment == null:
+		return false
+	if not STARTER_AUTO_EQUIP_SLOTS.has(equipment.slot):
+		return false
+	return player.get_equipped(equipment.slot) == null
 
 
 func _ensure_starter_modules_present(player: Player) -> bool:

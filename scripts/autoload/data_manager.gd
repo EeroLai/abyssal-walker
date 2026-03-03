@@ -170,6 +170,10 @@ const STARTER_EQUIPMENT_IDS: Array[String] = [
 	"iron_dagger",
 	"short_bow",
 	"apprentice_wand",
+	"leather_helmet",
+	"leather_armor",
+	"leather_boots",
+	"leather_belt",
 	"wooden_talisman",
 	"iron_warmark",
 	"crystal_arcane",
@@ -375,8 +379,8 @@ func _apply_floor_scaling(result: Dictionary, delta: int) -> void:
 	var enemy_count := int(result.get("enemy_count", 10))
 
 	hp_mult = minf(hp_mult * pow(1.045, delta), 30.0)
-	atk_mult = minf(atk_mult * pow(1.03, delta), 20.0)
-	enemy_count = clampi(enemy_count + int(delta / 2), 6, 48)
+	atk_mult = minf(atk_mult * pow(1.02, delta), 20.0)
+	enemy_count = clampi(enemy_count + int(delta / 3), 6, 48)
 	exp_mult = minf(exp_mult * pow(1.02, delta), 10.0)
 	drop_mult = minf(drop_mult * pow(1.01, delta), 3.0)
 

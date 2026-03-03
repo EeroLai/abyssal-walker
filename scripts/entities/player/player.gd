@@ -11,6 +11,8 @@ const SHADOW_STRIKE_OFFSET := 28.0
 const STAB_FINISHER_MULTIPLIER := 1.6
 const ARC_CHAIN_SEARCH_RADIUS := 240.0
 const ARC_UNUSED_CHAIN_MORE_PER_STACK := 0.05
+const DIRECT_HIT_GRACE_DURATION := 0.22
+const DIRECT_HIT_GRACE_MULTIPLIER := 0.4
 
 @export var pickup_range: float = 50.0
 @export var virtual_wall_margin: float = 80.0
@@ -51,6 +53,7 @@ const EQUIPMENT_SLOT_ORDER: Array[int] = [
 
 var current_hp: float = 100.0
 var is_dead: bool = false
+var _direct_hit_grace_remaining: float = 0.0
 
 var ai: PlayerAI
 var current_target: Node2D = null
@@ -112,6 +115,8 @@ func _connect_signals() -> void:
 func _physics_process(delta: float) -> void:
 	if is_dead:
 		return
+	if _direct_hit_grace_remaining > 0.0:
+		_direct_hit_grace_remaining = maxf(0.0, _direct_hit_grace_remaining - delta)
 
 	var life_regen := stats.get_stat(StatTypes.Stat.LIFE_REGEN)
 	if life_regen > 0.0:
@@ -1118,7 +1123,12 @@ func take_damage(damage_result: DamageCalculator.DamageResult, attacker: Node) -
 		return
 
 	var final_damage := _calculate_final_received_damage(damage_result)
+	if final_damage <= 0.0:
+		return
+	if _direct_hit_grace_remaining > 0.0:
+		final_damage *= DIRECT_HIT_GRACE_MULTIPLIER
 	_apply_damage_to_health(final_damage)
+	_direct_hit_grace_remaining = DIRECT_HIT_GRACE_DURATION
 	_apply_life_steal_on_hit(final_damage)
 
 	if current_hp <= 0:
@@ -1143,6 +1153,7 @@ func clamp_health_to_max() -> void:
 
 func _die() -> void:
 	is_dead = true
+	_direct_hit_grace_remaining = 0.0
 	stop_auto_attack()
 	died.emit()
 	_emit_event_bus("player_died")
@@ -1319,6 +1330,7 @@ func get_status_controller() -> StatusController:
 
 func respawn() -> void:
 	is_dead = false
+	_direct_hit_grace_remaining = 0.0
 	current_hp = stats.get_stat(StatTypes.Stat.HP)
 	_emit_health_changed()
 

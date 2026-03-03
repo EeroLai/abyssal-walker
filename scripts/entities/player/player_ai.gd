@@ -23,8 +23,8 @@ enum MovementStyle {
 }
 
 @export var attack_priority: AttackPriority = AttackPriority.NEAREST
-@export var movement_style: MovementStyle = MovementStyle.AGGRESSIVE
-@export var preferred_distance: float = 100.0  # 保持距離模式的理想距離
+@export var movement_style: MovementStyle = MovementStyle.KEEP_DISTANCE
+@export var preferred_distance: float = 140.0  # 保持距離模式的理想距離
 
 var player: Player
 var current_state: AIState = AIState.IDLE
@@ -245,7 +245,8 @@ func _get_keep_distance_position() -> Vector2:
 
 	var target_pos: Vector2 = player.current_target.global_position
 	var dir := (player.global_position - target_pos).normalized()
-	return target_pos + dir * preferred_distance
+	var desired_distance := maxf(preferred_distance, _get_ai_attack_range() * 0.55)
+	return target_pos + dir * desired_distance
 
 
 func _get_kiting_position() -> Vector2:

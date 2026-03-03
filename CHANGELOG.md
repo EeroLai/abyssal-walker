@@ -10,6 +10,21 @@ This format is based on Keep a Changelog and uses simple sections:
 
 ## [Unreleased]
 
+## [2.5.1] - 2026-03-03
+
+### Changed
+- Fresh and migrated builds now receive starter leather armor pieces auto-equipped into missing helmet, armor, boots, and belt slots.
+- Ranged player AI now defaults to keeping safer distance, reducing unnecessary face-tanking on bow and wand builds.
+
+### Fixed
+- Added a short repeated-hit grace window so overlapping direct hits and projectile clusters are less likely to burst the player down instantly.
+
+### Balance
+- Reduced abyss enemy attack pressure and total enemy count across the core floor milestones.
+- Softened inter-floor attack/count scaling so difficulty climbs more gradually between milestone floors.
+- Lowered damage output and attack cadence for high-pressure ranged and late-run enemies, including `fire_imp`, `ice_elemental`, `lightning_wisp`, `golem`, and `abyss_watcher`.
+- Slowed hostile ranged projectiles for mid/late-run caster enemies to create clearer dodge windows.
+
 ## [2.5.0] - 2026-03-02
 
 ### Added
