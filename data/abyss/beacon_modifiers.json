@@ -42,5 +42,44 @@
     "beacon_drop_chance_bonus": 0.003,
     "beacon_drop_level_bonus": 0,
     "boss_bonus_beacons": 0
+  },
+  "elite_uprising": {
+    "name": "Elite Uprising",
+    "summary": "Every floor forces extra elites and heavier front-line pressure.",
+    "enemy_hp_mult": 1.08,
+    "enemy_atk_mult": 1.08,
+    "enemy_count_bonus": 0,
+    "forced_elites_bonus": 1,
+    "elite_chance_bonus": 0.16,
+    "enemy_additions": ["abyss_raider", "golem"],
+    "beacon_drop_chance_bonus": 0.0,
+    "beacon_drop_level_bonus": 0,
+    "boss_bonus_beacons": 0
+  },
+  "ranged_surge": {
+    "name": "Ranged Surge",
+    "summary": "Ranged casters and artillery are mixed into more floors.",
+    "enemy_hp_mult": 1.04,
+    "enemy_atk_mult": 1.06,
+    "enemy_count_bonus": 1,
+    "forced_elites_bonus": 0,
+    "elite_chance_bonus": 0.03,
+    "enemy_additions": ["fire_imp", "ember_artillerist", "rift_channeler"],
+    "beacon_drop_chance_bonus": 0.0,
+    "beacon_drop_level_bonus": 0,
+    "boss_bonus_beacons": 0
+  },
+  "assault_pack": {
+    "name": "Assault Pack",
+    "summary": "Fast melee raiders are added to every wave and close distance faster.",
+    "enemy_hp_mult": 1.06,
+    "enemy_atk_mult": 1.08,
+    "enemy_count_bonus": 2,
+    "forced_elites_bonus": 0,
+    "elite_chance_bonus": 0.02,
+    "enemy_additions": ["abyss_raider", "skeleton"],
+    "beacon_drop_chance_bonus": 0.0,
+    "beacon_drop_level_bonus": 0,
+    "boss_bonus_beacons": 0
   }
 }

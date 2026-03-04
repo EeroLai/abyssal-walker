@@ -135,7 +135,7 @@ func _physics_process(delta: float) -> void:
 	var distance := global_position.distance_to(target.global_position)
 	var engage_distance := _get_engage_distance()
 
-	if distance <= atk_range:
+	if distance <= _get_special_attempt_distance():
 		if attack_timer != null and attack_timer.is_stopped():
 			attack_timer.start()
 	else:
@@ -618,6 +618,11 @@ func _pick_special_ability(distance: float) -> String:
 			"summon":
 				support_options.append(ability)
 
+	if enemy_id == "abyss_watcher":
+		return _pick_abyss_watcher_ability(distance, close_options, support_options)
+	if enemy_id == "void_weaver":
+		return _pick_void_weaver_ability(distance, ranged_options, support_options)
+
 	if distance <= 100.0 and not close_options.is_empty() and randf() < 0.75:
 		return close_options[randi() % close_options.size()]
 	if distance > 100.0 and not ranged_options.is_empty() and randf() < 0.75:
@@ -686,8 +691,8 @@ func _use_summon_ability() -> bool:
 func _use_barrage_ability(damage_result: DamageCalculator.DamageResult) -> bool:
 	if target == null or not is_instance_valid(target):
 		return false
-	var projectile_count := 5 if is_boss else ability_projectile_count
-	var spread_deg := 32.0 if is_boss else ability_spread_deg
+	var projectile_count := maxi(1, ability_projectile_count)
+	var spread_deg := maxf(0.0, ability_spread_deg)
 	var scale := 0.72 if is_boss else 0.82
 	_launch_projectile_attack(_scaled_damage_result(damage_result, scale), projectile_count, spread_deg, false)
 	return true
@@ -787,6 +792,14 @@ func _clear_ability_telegraph() -> void:
 
 
 func _get_ability_telegraph_duration(ability: String) -> float:
+	if enemy_id == "abyss_watcher":
+		match ability:
+			"charge":
+				return 0.42
+			"slam":
+				return 0.56
+	if enemy_id == "void_weaver" and ability == "nova":
+		return 1.0
 	match ability:
 		"charge":
 			return 0.55
@@ -962,7 +975,60 @@ func _clear_rank_label() -> void:
 		_rank_label = null
 
 
+func _get_special_attempt_distance() -> float:
+	var attempt_distance: float = atk_range
+	for ability_name in abilities:
+		match str(ability_name):
+			"charge":
+				attempt_distance = maxf(attempt_distance, 170.0)
+			"slam":
+				attempt_distance = maxf(attempt_distance, 115.0)
+			"barrage":
+				attempt_distance = maxf(attempt_distance, atk_range * 1.2)
+			"nova":
+				attempt_distance = maxf(attempt_distance, 120.0)
+			"summon":
+				attempt_distance = maxf(attempt_distance, atk_range * 0.9)
+			_:
+				pass
+	return attempt_distance
+
+
+func _pick_abyss_watcher_ability(distance: float, close_options: Array[String], support_options: Array[String]) -> String:
+	if distance >= 74.0 and close_options.has("charge") and randf() < 0.78:
+		return "charge"
+	if distance <= 88.0 and close_options.has("slam") and randf() < 0.86:
+		return "slam"
+	if _boss_phase_index >= 1 and support_options.has("summon") and randf() < 0.32:
+		return "summon"
+	if close_options.has("charge") and distance > 62.0:
+		return "charge"
+	if close_options.has("slam"):
+		return "slam"
+	if support_options.has("summon"):
+		return "summon"
+	return ""
+
+
+func _pick_void_weaver_ability(distance: float, ranged_options: Array[String], support_options: Array[String]) -> String:
+	if distance <= 118.0 and ranged_options.has("nova") and randf() < 0.72:
+		return "nova"
+	if distance > 118.0 and ranged_options.has("barrage") and randf() < 0.84:
+		return "barrage"
+	if _boss_phase_index >= 1 and support_options.has("summon") and randf() < 0.4:
+		return "summon"
+	if ranged_options.has("barrage"):
+		return "barrage"
+	if ranged_options.has("nova"):
+		return "nova"
+	if support_options.has("summon"):
+		return "summon"
+	return ""
+
+
 func _get_engage_distance() -> float:
+	if enemy_id == "void_weaver":
+		return clampf(atk_range * 0.72, 145.0, 170.0)
 	if behavior == "ranged" or behavior == "hit_and_run":
 		return atk_range
 	var contact_distance := _get_body_radius(self) + _get_body_radius(target) + 4.0

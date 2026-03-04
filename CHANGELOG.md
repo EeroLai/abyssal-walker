@@ -10,6 +10,28 @@ This format is based on Keep a Changelog and uses simple sections:
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-03-04
+
+### Added
+- New gameplay-oriented beacon modifiers:
+  - `elite_uprising`
+  - `ranged_surge`
+  - `assault_pack`
+- Beacon modifier support for:
+  - forcing extra elites
+  - adding enemies into floor pools
+  - removing enemies from floor pools
+
+### Changed
+- `Abyss Watcher` and `Void Weaver` now have more distinct combat roles:
+  - `Abyss Watcher` leans into close-range pressure, faster engage flow, and heavier summon support
+  - `Void Weaver` leans into ranged spacing, wider barrage patterns, and zone-control timing
+- Special enemy abilities are no longer gated too tightly by normal attack range, so engage skills like `charge` can trigger from more appropriate distances.
+- Beacon templates now roll more encounter-shaping modifiers instead of staying mostly numeric.
+
+### Fixed
+- Fixed telegraphed `charge` behavior so released dash momentum is no longer cleared before the movement actually happens.
+
 ## [2.6.0] - 2026-03-04
 
 ### Added

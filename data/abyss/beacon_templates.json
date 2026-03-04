@@ -46,9 +46,11 @@
       "lives": { "min": 2, "max": 3 },
       "modifier_rolls": [
         {
-          "chance": 0.2,
+          "chance": 0.35,
           "pool": [
-            { "id": "survey", "weight": 1 }
+            { "id": "survey", "weight": 2 },
+            { "id": "ranged_surge", "weight": 1 },
+            { "id": "assault_pack", "weight": 1 }
           ]
         }
       ]
@@ -63,9 +65,11 @@
       "lives": { "min": 2, "max": 2 },
       "modifier_rolls": [
         {
-          "chance": 0.35,
+          "chance": 0.45,
           "pool": [
-            { "id": "deep_range", "weight": 1 }
+            { "id": "deep_range", "weight": 2 },
+            { "id": "ranged_surge", "weight": 1 },
+            { "id": "elite_uprising", "weight": 1 }
           ]
         }
       ]
@@ -84,7 +88,9 @@
           "pool": [
             { "id": "pressure", "weight": 1 },
             { "id": "boss_reward", "weight": 1 },
-            { "id": "deep_range", "weight": 1 }
+            { "id": "deep_range", "weight": 1 },
+            { "id": "elite_uprising", "weight": 2 },
+            { "id": "assault_pack", "weight": 2 }
           ]
         }
       ]
@@ -98,9 +104,11 @@
       "lives": { "min": 1, "max": 1 },
       "modifier_rolls": [
         {
-          "chance": 0.35,
+          "chance": 0.55,
           "pool": [
-            { "id": "deep_range", "weight": 1 }
+            { "id": "deep_range", "weight": 2 },
+            { "id": "elite_uprising", "weight": 1 },
+            { "id": "ranged_surge", "weight": 1 }
           ]
         }
       ]
