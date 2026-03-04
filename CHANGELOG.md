@@ -10,6 +10,32 @@ This format is based on Keep a Changelog and uses simple sections:
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-03-04
+
+### Added
+- Data-driven elite affix definitions via `data/enemies/elite_affixes.json`.
+- New enemy archetypes for regular floors:
+  - `Abyss Raider`
+  - `Ember Artillerist`
+  - `Rift Channeler`
+- Expanded boss roster with `Void Weaver` as a second final-floor boss option.
+- Boss HUD support for:
+  - boss name
+  - phase display
+  - animated boss health bar
+- Boss combat telegraphs for `charge`, `slam`, and `nova`.
+
+### Changed
+- Final-floor boss selection now resolves from floor `boss_pool` data instead of a hardcoded `abyss_watcher`.
+- Enemy special abilities are now shared across bosses and supported regular enemies instead of being effectively boss-only behavior.
+- Elite modifiers now roll from data tables with compatibility and runtime-effect support in the spawner/enemy runtime flow.
+- Boss encounters now emit dedicated spawn, defeat, phase-change, and ability-telegraph events for UI and encounter feedback.
+- Removed the old headless smoke runner from source control.
+
+### Fixed
+- Fixed multiple GDScript strict-typing / Variant-inference issues in enemy spawning and related runtime paths.
+- Fixed boss charge telegraph flow so `charge` now preserves its dash movement instead of losing momentum on release.
+
 ## [2.5.1] - 2026-03-03
 
 ### Changed

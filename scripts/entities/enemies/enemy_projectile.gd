@@ -9,6 +9,7 @@ var hit_radius: float = 12.0
 var _target_position: Vector2 = Vector2.ZERO
 var _lifetime: float = 4.0
 var _color: Color = Color(1.0, 0.5, 0.3, 1.0)
+var _tracking_enabled: bool = true
 
 
 func setup(
@@ -16,14 +17,20 @@ func setup(
 	tgt: Node2D,
 	dmg: DamageCalculator.DamageResult,
 	projectile_speed: float,
-	proj_color: Color
+	proj_color: Color,
+	tracking_enabled: bool = true,
+	forced_target_position: Vector2 = Vector2.INF
 ) -> void:
 	source = src
 	target = tgt
 	damage_result = dmg
 	speed = maxf(projectile_speed, 60.0)
 	_color = proj_color
-	_target_position = target.global_position if is_instance_valid(target) else global_position
+	_tracking_enabled = tracking_enabled
+	if forced_target_position != Vector2.INF:
+		_target_position = forced_target_position
+	else:
+		_target_position = target.global_position if is_instance_valid(target) else global_position
 	queue_redraw()
 
 
@@ -33,7 +40,7 @@ func _process(delta: float) -> void:
 		queue_free()
 		return
 
-	if target != null and is_instance_valid(target):
+	if _tracking_enabled and target != null and is_instance_valid(target):
 		_target_position = target.global_position
 
 	var to_target := _target_position - global_position

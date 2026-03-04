@@ -20,6 +20,12 @@ var _pickup_entries: Array[Dictionary] = []
 var _pickup_labels: Array[Label] = []
 var loot_filter_label: Label = null
 var operation_label: Label = null
+var boss_panel: PanelContainer = null
+var boss_name_label: Label = null
+var boss_phase_label: Label = null
+var boss_hp_underlay_bar: ProgressBar = null
+var boss_hp_bar: ProgressBar = null
+var boss_hp_label: Label = null
 var extraction_prompt_panel: PanelContainer = null
 var extraction_prompt_label: Label = null
 var run_summary_panel: PanelContainer = null
@@ -36,6 +42,20 @@ var damage_vignette: Panel = null
 var _last_hp_value: float = -1.0
 var _damage_vignette_tween: Tween = null
 var tracked_player: Player = null
+var tracked_boss: EnemyBase = null
+var _boss_phase_number: int = 1
+var _boss_panel_style: StyleBoxFlat = null
+var _boss_hp_background_style: StyleBoxFlat = null
+var _boss_hp_underlay_style: StyleBoxFlat = null
+var _boss_hp_fill_style: StyleBoxFlat = null
+var _boss_hp_tween: Tween = null
+var _boss_hp_underlay_tween: Tween = null
+var _boss_phase_tween: Tween = null
+var _boss_last_known_hp_value: float = -1.0
+var _boss_last_known_max_hp: float = -1.0
+var _boss_damage_flash: float = 0.0
+var _boss_phase_flash: float = 0.0
+var _boss_low_hp_pulse_time: float = 0.0
 
 const PICKUP_FEED_MAX: int = 6
 const PICKUP_SHOW_TIME: float = 2.6
@@ -46,6 +66,7 @@ func _ready() -> void:
 	_create_pickup_feed()
 	_create_loot_filter_label()
 	_create_operation_label()
+	_create_boss_panel()
 	_create_extraction_prompt_label()
 	_create_run_summary_panel()
 	_create_progression_labels()
@@ -58,8 +79,10 @@ func _ready() -> void:
 		LocalizationService.locale_changed.connect(_on_locale_changed)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	_refresh_pickup_feed()
+	_refresh_boss_panel()
+	_update_boss_panel_effects(delta)
 
 
 func _connect_signals() -> void:
@@ -67,6 +90,10 @@ func _connect_signals() -> void:
 	EventBus.dps_updated.connect(_on_dps_updated)
 	EventBus.kill_count_changed.connect(_on_kill_count_changed)
 	EventBus.floor_entered.connect(_on_floor_entered)
+	EventBus.boss_spawned.connect(_on_boss_spawned)
+	EventBus.boss_defeated.connect(_on_boss_defeated)
+	EventBus.boss_phase_changed.connect(_on_boss_phase_changed)
+	EventBus.enemy_ability_telegraphed.connect(_on_enemy_ability_telegraphed)
 	EventBus.item_picked_up.connect(_on_item_picked_up)
 	EventBus.status_applied.connect(_on_status_applied)
 	EventBus.status_removed.connect(_on_status_removed)
@@ -121,6 +148,80 @@ func _on_kill_count_changed(count: int) -> void:
 
 func _on_floor_entered(floor_number: int) -> void:
 	update_floor(floor_number)
+
+
+func _on_boss_spawned(boss: Node) -> void:
+	var boss_name: String = _resolve_combatant_name(boss)
+	if boss is EnemyBase:
+		tracked_boss = boss as EnemyBase
+		_boss_phase_number = 1
+		_boss_last_known_hp_value = -1.0
+		_boss_last_known_max_hp = -1.0
+		_boss_damage_flash = 0.0
+		_boss_phase_flash = 0.32
+		_boss_low_hp_pulse_time = 0.0
+		_play_boss_phase_pulse(1.02)
+		_refresh_boss_panel()
+	_add_feed_entry(
+		"boss_spawned:%s" % boss_name,
+		_fmt("ui.hud.boss_spawned", {"name": boss_name}, "Boss engaged: {name}"),
+		1,
+		Color(1.0, 0.62, 0.42)
+	)
+
+
+func _on_boss_defeated(boss: Node) -> void:
+	var boss_name: String = _resolve_combatant_name(boss)
+	_add_feed_entry(
+		"boss_defeated:%s" % boss_name,
+		_fmt("ui.hud.boss_defeated", {"name": boss_name}, "Boss defeated: {name}"),
+		1,
+		Color(0.72, 1.0, 0.78)
+	)
+	if boss == tracked_boss:
+		_clear_tracked_boss()
+
+
+func _on_boss_phase_changed(boss: Node, phase_number: int) -> void:
+	var boss_name: String = _resolve_combatant_name(boss)
+	if boss == tracked_boss:
+		_boss_phase_number = maxi(1, phase_number)
+		_boss_phase_flash = 1.0
+		_play_boss_phase_pulse(1.05)
+		_refresh_boss_panel()
+	_add_feed_entry(
+		"boss_phase:%s:%d" % [boss_name, phase_number],
+		_fmt(
+			"ui.hud.boss_phase_shift",
+			{"name": boss_name, "phase": phase_number},
+			"{name} enters phase {phase}!"
+		),
+		1,
+		Color(1.0, 0.7, 0.34)
+	)
+
+
+func _on_enemy_ability_telegraphed(enemy: Node, ability: String) -> void:
+	var enemy_name: String = _resolve_combatant_name(enemy)
+	var message: String = ""
+	match ability:
+		"charge":
+			message = _fmt("ui.hud.boss_charge", {"name": enemy_name}, "{name} lines up a charge!")
+		"slam":
+			message = _fmt("ui.hud.boss_slam", {"name": enemy_name}, "{name} prepares a crushing slam!")
+		"summon":
+			message = _fmt("ui.hud.boss_summon", {"name": enemy_name}, "{name} tears open a summoning rift!")
+		"barrage":
+			message = _fmt("ui.hud.boss_barrage", {"name": enemy_name}, "{name} unleashes a projectile barrage!")
+		"nova":
+			message = _fmt("ui.hud.boss_nova", {"name": enemy_name}, "{name} releases a void nova!")
+		_:
+			message = _fmt("ui.hud.boss_ability", {"name": enemy_name, "ability": ability}, "{name} uses {ability}!")
+
+	if message.is_empty():
+		return
+
+	_add_feed_entry("boss_ability:%s:%s" % [enemy_name, ability], message, 1, Color(1.0, 0.78, 0.42))
 
 
 func bind_player(player_node: Player) -> void:
@@ -336,6 +437,283 @@ func _create_operation_label() -> void:
 	operation_label.add_theme_font_size_override("font_size", 13)
 	operation_label.modulate = Color(0.72, 0.95, 1.0, 0.95)
 	add_child(operation_label)
+
+
+func _create_boss_panel() -> void:
+	boss_panel = PanelContainer.new()
+	boss_panel.name = "BossPanel"
+	boss_panel.anchor_left = 0.5
+	boss_panel.anchor_top = 0.0
+	boss_panel.anchor_right = 0.5
+	boss_panel.anchor_bottom = 0.0
+	boss_panel.offset_left = -220.0
+	boss_panel.offset_top = 44.0
+	boss_panel.offset_right = 220.0
+	boss_panel.offset_bottom = 108.0
+	boss_panel.visible = false
+	boss_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	boss_panel.z_index = 35
+	add_child(boss_panel)
+
+	_boss_panel_style = StyleBoxFlat.new()
+	_boss_panel_style.bg_color = Color(0.12, 0.04, 0.06, 0.92)
+	_boss_panel_style.border_color = Color(0.95, 0.28, 0.24, 0.96)
+	_boss_panel_style.set_border_width_all(2)
+	_boss_panel_style.set_corner_radius_all(9)
+	_boss_panel_style.content_margin_left = 10
+	_boss_panel_style.content_margin_right = 10
+	_boss_panel_style.content_margin_top = 8
+	_boss_panel_style.content_margin_bottom = 8
+	boss_panel.add_theme_stylebox_override("panel", _boss_panel_style)
+
+	var vbox := VBoxContainer.new()
+	vbox.name = "BossPanelVBox"
+	vbox.add_theme_constant_override("separation", 6)
+	boss_panel.add_child(vbox)
+
+	var top_row := HBoxContainer.new()
+	top_row.name = "BossTopRow"
+	top_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(top_row)
+
+	boss_name_label = Label.new()
+	boss_name_label.name = "BossNameLabel"
+	boss_name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	boss_name_label.add_theme_font_size_override("font_size", 15)
+	boss_name_label.modulate = Color(1.0, 0.92, 0.9, 0.98)
+	top_row.add_child(boss_name_label)
+
+	boss_phase_label = Label.new()
+	boss_phase_label.name = "BossPhaseLabel"
+	boss_phase_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	boss_phase_label.add_theme_font_size_override("font_size", 12)
+	boss_phase_label.modulate = Color(1.0, 0.8, 0.52, 0.96)
+	top_row.add_child(boss_phase_label)
+
+	var bar_holder := Control.new()
+	bar_holder.name = "BossBarHolder"
+	bar_holder.custom_minimum_size = Vector2(0.0, 22.0)
+	bar_holder.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.add_child(bar_holder)
+
+	_boss_hp_background_style = StyleBoxFlat.new()
+	_boss_hp_background_style.bg_color = Color(0.18, 0.04, 0.05, 0.96)
+	_boss_hp_background_style.set_corner_radius_all(6)
+
+	_boss_hp_underlay_style = StyleBoxFlat.new()
+	_boss_hp_underlay_style.bg_color = Color(1.0, 0.74, 0.42, 0.62)
+	_boss_hp_underlay_style.set_corner_radius_all(6)
+
+	_boss_hp_fill_style = StyleBoxFlat.new()
+	_boss_hp_fill_style.bg_color = Color(0.92, 0.2, 0.18, 0.96)
+	_boss_hp_fill_style.set_corner_radius_all(6)
+
+	boss_hp_underlay_bar = ProgressBar.new()
+	boss_hp_underlay_bar.name = "BossHPUnderlayBar"
+	boss_hp_underlay_bar.anchor_right = 1.0
+	boss_hp_underlay_bar.anchor_bottom = 1.0
+	boss_hp_underlay_bar.show_percentage = false
+	boss_hp_underlay_bar.max_value = 1.0
+	boss_hp_underlay_bar.value = 1.0
+	boss_hp_underlay_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	boss_hp_underlay_bar.add_theme_stylebox_override("background", _boss_hp_background_style)
+	boss_hp_underlay_bar.add_theme_stylebox_override("fill", _boss_hp_underlay_style)
+	bar_holder.add_child(boss_hp_underlay_bar)
+
+	boss_hp_bar = ProgressBar.new()
+	boss_hp_bar.name = "BossHPBar"
+	boss_hp_bar.anchor_right = 1.0
+	boss_hp_bar.anchor_bottom = 1.0
+	boss_hp_bar.show_percentage = false
+	boss_hp_bar.max_value = 1.0
+	boss_hp_bar.value = 1.0
+	boss_hp_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var transparent_bar_bg := StyleBoxFlat.new()
+	transparent_bar_bg.bg_color = Color(0.0, 0.0, 0.0, 0.0)
+	transparent_bar_bg.set_corner_radius_all(6)
+	boss_hp_bar.add_theme_stylebox_override("background", transparent_bar_bg)
+	boss_hp_bar.add_theme_stylebox_override("fill", _boss_hp_fill_style)
+	bar_holder.add_child(boss_hp_bar)
+
+	boss_hp_label = Label.new()
+	boss_hp_label.name = "BossHPLabel"
+	boss_hp_label.anchor_right = 1.0
+	boss_hp_label.anchor_bottom = 1.0
+	boss_hp_label.offset_left = 0.0
+	boss_hp_label.offset_top = 0.0
+	boss_hp_label.offset_right = 0.0
+	boss_hp_label.offset_bottom = 0.0
+	boss_hp_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	boss_hp_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	boss_hp_label.add_theme_font_size_override("font_size", 12)
+	bar_holder.add_child(boss_hp_label)
+
+
+func _refresh_boss_panel() -> void:
+	if boss_panel == null:
+		return
+	if tracked_boss == null or not is_instance_valid(tracked_boss) or tracked_boss.is_dead():
+		if boss_panel.visible:
+			_clear_tracked_boss()
+		return
+
+	var max_hp: float = maxf(tracked_boss.get_max_hp(), 1.0)
+	var current_hp: float = clampf(tracked_boss.get_current_hp(), 0.0, max_hp)
+	var hp_changed: bool = _boss_last_known_hp_value < 0.0 or absf(current_hp - _boss_last_known_hp_value) > 0.05
+	var max_hp_changed: bool = _boss_last_known_max_hp < 0.0 or absf(max_hp - _boss_last_known_max_hp) > 0.05
+	if boss_name_label != null:
+		boss_name_label.text = _resolve_combatant_name(tracked_boss)
+	if boss_phase_label != null:
+		boss_phase_label.text = _fmt("ui.hud.boss_phase_badge", {"phase": _boss_phase_number}, "Phase {phase}")
+	if max_hp_changed or hp_changed:
+		_update_boss_hp_display(current_hp, max_hp, _boss_last_known_hp_value < 0.0 or max_hp_changed)
+	if boss_hp_label != null:
+		boss_hp_label.text = _fmt(
+			"ui.hud.boss_hp",
+			{"current": int(current_hp), "max": int(max_hp)},
+			"{current} / {max}"
+		)
+	_boss_last_known_hp_value = current_hp
+	_boss_last_known_max_hp = max_hp
+	boss_panel.visible = true
+
+
+func _clear_tracked_boss() -> void:
+	tracked_boss = null
+	_boss_phase_number = 1
+	_boss_last_known_hp_value = -1.0
+	_boss_last_known_max_hp = -1.0
+	_boss_damage_flash = 0.0
+	_boss_phase_flash = 0.0
+	_boss_low_hp_pulse_time = 0.0
+	if _boss_hp_tween != null and _boss_hp_tween.is_valid():
+		_boss_hp_tween.kill()
+	if _boss_hp_underlay_tween != null and _boss_hp_underlay_tween.is_valid():
+		_boss_hp_underlay_tween.kill()
+	if _boss_phase_tween != null and _boss_phase_tween.is_valid():
+		_boss_phase_tween.kill()
+	if boss_panel != null:
+		boss_panel.visible = false
+		boss_panel.scale = Vector2.ONE
+		boss_panel.modulate = Color.WHITE
+	if boss_name_label != null:
+		boss_name_label.text = ""
+		boss_name_label.modulate = Color(1.0, 0.92, 0.9, 0.98)
+	if boss_phase_label != null:
+		boss_phase_label.text = ""
+		boss_phase_label.modulate = Color(1.0, 0.8, 0.52, 0.96)
+	if boss_hp_underlay_bar != null:
+		boss_hp_underlay_bar.max_value = 1.0
+		boss_hp_underlay_bar.value = 0.0
+	if boss_hp_bar != null:
+		boss_hp_bar.max_value = 1.0
+		boss_hp_bar.value = 0.0
+	if boss_hp_label != null:
+		boss_hp_label.text = ""
+	if _boss_panel_style != null:
+		_boss_panel_style.bg_color = Color(0.12, 0.04, 0.06, 0.92)
+		_boss_panel_style.border_color = Color(0.95, 0.28, 0.24, 0.96)
+	if _boss_hp_background_style != null:
+		_boss_hp_background_style.bg_color = Color(0.18, 0.04, 0.05, 0.96)
+	if _boss_hp_underlay_style != null:
+		_boss_hp_underlay_style.bg_color = Color(1.0, 0.74, 0.42, 0.62)
+	if _boss_hp_fill_style != null:
+		_boss_hp_fill_style.bg_color = Color(0.92, 0.2, 0.18, 0.96)
+
+
+func _update_boss_hp_display(current_hp: float, max_hp: float, instant: bool) -> void:
+	if boss_hp_bar == null:
+		return
+
+	if boss_hp_underlay_bar != null:
+		boss_hp_underlay_bar.max_value = max_hp
+	boss_hp_bar.max_value = max_hp
+
+	if instant:
+		if boss_hp_underlay_bar != null:
+			boss_hp_underlay_bar.value = current_hp
+		boss_hp_bar.value = current_hp
+		return
+
+	var previous_hp: float = _boss_last_known_hp_value
+	if previous_hp < 0.0:
+		previous_hp = current_hp
+	var damage_ratio: float = 0.0
+	if current_hp < previous_hp and max_hp > 0.0:
+		damage_ratio = clampf((previous_hp - current_hp) / max_hp, 0.0, 1.0)
+		_boss_damage_flash = maxf(_boss_damage_flash, 0.35 + damage_ratio * 1.4)
+
+	if _boss_hp_tween != null and _boss_hp_tween.is_valid():
+		_boss_hp_tween.kill()
+	_boss_hp_tween = create_tween()
+	_boss_hp_tween.tween_property(boss_hp_bar, "value", current_hp, 0.16).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+
+	if boss_hp_underlay_bar != null:
+		if _boss_hp_underlay_tween != null and _boss_hp_underlay_tween.is_valid():
+			_boss_hp_underlay_tween.kill()
+		_boss_hp_underlay_tween = create_tween()
+		if current_hp < boss_hp_underlay_bar.value:
+			_boss_hp_underlay_tween.tween_interval(0.08)
+			_boss_hp_underlay_tween.tween_property(boss_hp_underlay_bar, "value", current_hp, 0.48).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+		else:
+			_boss_hp_underlay_tween.tween_property(boss_hp_underlay_bar, "value", current_hp, 0.16).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+
+
+func _update_boss_panel_effects(delta: float) -> void:
+	if boss_panel == null:
+		return
+	if tracked_boss == null or not is_instance_valid(tracked_boss) or tracked_boss.is_dead():
+		return
+
+	_boss_damage_flash = maxf(0.0, _boss_damage_flash - delta * 2.8)
+	_boss_phase_flash = maxf(0.0, _boss_phase_flash - delta * 1.9)
+
+	var max_hp: float = maxf(tracked_boss.get_max_hp(), 1.0)
+	var current_hp: float = clampf(tracked_boss.get_current_hp(), 0.0, max_hp)
+	var hp_ratio: float = current_hp / max_hp
+	var low_hp_ratio: float = clampf((0.3 - hp_ratio) / 0.3, 0.0, 1.0)
+	if low_hp_ratio > 0.0:
+		_boss_low_hp_pulse_time += delta * lerpf(3.0, 7.0, low_hp_ratio)
+	else:
+		_boss_low_hp_pulse_time = 0.0
+
+	var low_pulse: float = 0.0
+	if low_hp_ratio > 0.0:
+		low_pulse = (sin(_boss_low_hp_pulse_time) * 0.5 + 0.5) * low_hp_ratio
+
+	if _boss_panel_style != null:
+		_boss_panel_style.bg_color = Color(0.12, 0.04, 0.06, 0.92).lerp(Color(0.22, 0.05, 0.07, 0.96), low_pulse * 0.75)
+		var border_color: Color = Color(0.95, 0.28, 0.24, 0.96)
+		border_color = border_color.lerp(Color(1.0, 0.9, 0.58, 1.0), _boss_phase_flash)
+		border_color = border_color.lerp(Color(1.0, 0.52, 0.38, 1.0), _boss_damage_flash * 0.8)
+		border_color = border_color.lerp(Color(1.0, 0.22, 0.22, 1.0), low_pulse)
+		_boss_panel_style.border_color = border_color
+
+	if _boss_hp_background_style != null:
+		_boss_hp_background_style.bg_color = Color(0.18, 0.04, 0.05, 0.96).lerp(Color(0.26, 0.06, 0.08, 0.98), low_pulse * 0.6)
+	if _boss_hp_underlay_style != null:
+		_boss_hp_underlay_style.bg_color = Color(1.0, 0.74, 0.42, 0.62).lerp(Color(1.0, 0.86, 0.58, 0.78), _boss_phase_flash * 0.75)
+	if _boss_hp_fill_style != null:
+		var fill_color: Color = Color(0.92, 0.2, 0.18, 0.96)
+		fill_color = fill_color.lerp(Color(1.0, 0.5, 0.32, 1.0), _boss_damage_flash)
+		fill_color = fill_color.lerp(Color(1.0, 0.14, 0.14, 1.0), low_pulse)
+		_boss_hp_fill_style.bg_color = fill_color
+
+	if boss_name_label != null:
+		boss_name_label.modulate = Color(1.0, 0.92, 0.9, 0.98).lerp(Color(1.0, 0.84, 0.74, 1.0), _boss_damage_flash * 0.7)
+	if boss_phase_label != null:
+		boss_phase_label.modulate = Color(1.0, 0.8, 0.52, 0.96).lerp(Color(1.0, 0.95, 0.72, 1.0), _boss_phase_flash)
+
+
+func _play_boss_phase_pulse(target_scale: float) -> void:
+	if boss_panel == null:
+		return
+	if _boss_phase_tween != null and _boss_phase_tween.is_valid():
+		_boss_phase_tween.kill()
+	boss_panel.scale = Vector2.ONE
+	_boss_phase_tween = create_tween()
+	_boss_phase_tween.tween_property(boss_panel, "scale", Vector2(target_scale, target_scale), 0.12).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	_boss_phase_tween.tween_property(boss_panel, "scale", Vector2.ONE, 0.22).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
 
 
 func _create_extraction_prompt_label() -> void:
@@ -623,6 +1001,16 @@ func _on_notification_requested(message: String, type: String) -> void:
 	_add_feed_entry("notice:%s:%s" % [type, message], message, 1, color)
 
 
+func _resolve_combatant_name(combatant: Node) -> String:
+	if combatant is EnemyBase:
+		var enemy: EnemyBase = combatant as EnemyBase
+		if enemy != null and not enemy.display_name.is_empty():
+			return enemy.display_name
+		if enemy != null and not enemy.enemy_id.is_empty():
+			return enemy.enemy_id.capitalize()
+	return _t("common.unknown", "Unknown")
+
+
 func _show_pickup_message(item_data: Variant) -> void:
 	if pickup_feed == null:
 		return
@@ -762,6 +1150,7 @@ func _on_locale_changed(_locale: String) -> void:
 		update_inventory(tracked_player.get_inventory_size())
 	_refresh_loot_filter_label()
 	_on_operation_session_changed(GameManager.get_operation_summary())
+	_refresh_boss_panel()
 
 
 func _apply_localized_texts() -> void:
@@ -781,6 +1170,7 @@ func _apply_localized_texts() -> void:
 				update_floor(int(result.get_string(1)))
 	if kills_label != null:
 		_on_kill_count_changed(kills)
+	_refresh_boss_panel()
 
 
 func _t(key: String, fallback: String) -> String:

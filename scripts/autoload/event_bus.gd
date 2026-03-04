@@ -37,6 +37,8 @@ signal floor_cleared(floor_number: int)
 signal floor_failed(floor_number: int)
 signal boss_spawned(boss: Node)
 signal boss_defeated(boss: Node)
+signal boss_phase_changed(boss: Node, phase_number: int)
+signal enemy_ability_telegraphed(enemy: Node, ability: String)
 
 # Status
 signal status_applied(target: Node, status_type: String, stacks: int)

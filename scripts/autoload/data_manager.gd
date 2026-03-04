@@ -6,6 +6,7 @@ var equipment_bases: Dictionary = {}   # id -> equipment base definition
 var skill_gems: Dictionary = {}        # id -> skill gem definition
 var support_gems: Dictionary = {}      # id -> support gem definition
 var enemy_data: Dictionary = {}        # id -> enemy definition
+var elite_affixes: Dictionary = {}     # id -> elite affix definition
 var floor_data: Dictionary = {}        # floor_number -> floor config
 var beacon_modifiers: Dictionary = {}  # id -> abyss beacon modifier definition
 var beacon_templates: Dictionary = {}  # abyss beacon generation templates and pools
@@ -30,6 +31,7 @@ func load_all_data() -> void:
 	_load_crafting_materials()
 	_load_modules()
 	_load_enemy_data()
+	_load_elite_affixes()
 	_load_floor_data()
 	_load_beacon_modifiers()
 	_load_beacon_templates()
@@ -82,6 +84,11 @@ func _load_support_gems() -> void:
 func _load_enemy_data() -> void:
 	var path := "res://data/enemies/enemies.json"
 	enemy_data = _load_json(path)
+
+
+func _load_elite_affixes() -> void:
+	var path := "res://data/enemies/elite_affixes.json"
+	elite_affixes = _load_json(path)
 
 
 func _load_floor_data() -> void:
@@ -305,6 +312,14 @@ func _element_from_string(value: String) -> StatTypes.Element:
 
 func get_enemy(id: String) -> Dictionary:
 	return enemy_data.get(id, {})
+
+
+func get_elite_affix_data(id: String) -> Dictionary:
+	return elite_affixes.get(id, {})
+
+
+func get_all_elite_affix_ids() -> Array[String]:
+	return _collect_ids(elite_affixes)
 
 
 func get_floor_config(floor_number: int) -> Dictionary:

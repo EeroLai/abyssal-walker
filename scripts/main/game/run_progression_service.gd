@@ -55,7 +55,7 @@ func configure_floor_objective(floor_number: int, max_depth: int, boss_objective
 	if floor_number == max_depth:
 		floor_objective_type = boss_objective_type
 		required_boss_kills = 1
-		config["boss"] = "abyss_watcher"
+		config["boss"] = _resolve_boss_id(config)
 
 
 func record_enemy_died(enemy: EnemyBase) -> int:
@@ -142,3 +142,22 @@ func get_progression_mode_text(mode_farming: int, mode_retrying: int) -> String:
 			return "Mode: Retrying"
 		_:
 			return "Mode: Pushing"
+
+
+func _resolve_boss_id(config: Dictionary) -> String:
+	var explicit_boss := str(config.get("boss", ""))
+	if not explicit_boss.is_empty():
+		return explicit_boss
+
+	var boss_pool_value: Variant = config.get("boss_pool", [])
+	if boss_pool_value is Array:
+		var boss_pool := boss_pool_value as Array
+		var valid_ids: Array[String] = []
+		for boss_id in boss_pool:
+			var id := str(boss_id)
+			if not id.is_empty():
+				valid_ids.append(id)
+		if not valid_ids.is_empty():
+			return valid_ids[randi() % valid_ids.size()]
+
+	return "abyss_watcher"

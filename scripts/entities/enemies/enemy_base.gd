@@ -2,12 +2,14 @@ class_name EnemyBase
 extends CharacterBody2D
 
 signal died(enemy: EnemyBase)
+
 const ENEMY_PROJECTILE_SCRIPT := preload("res://scripts/entities/enemies/enemy_projectile.gd")
+const BOSS_PHASE_THRESHOLDS := [0.66, 0.33]
+const BOSS_MIN_COOLDOWN := 1.4
+const BOSS_SUMMON_ACTIVE_CAP := 10
 
 @export var enemy_id: String = "slime"
-@export var display_name: String = "史萊姆"
-
-# 基礎數值
+@export var display_name: String = "Enemy"
 @export var base_hp: float = 30.0
 @export var base_atk: float = 5.0
 @export var base_def: float = 0.0
@@ -18,31 +20,56 @@ const ENEMY_PROJECTILE_SCRIPT := preload("res://scripts/entities/enemies/enemy_p
 @export var behavior: String = "chase"
 @export var uses_projectile: bool = false
 @export var projectile_speed: float = 320.0
-
-# 元素屬性
 @export var element: StatTypes.Element = StatTypes.Element.PHYSICAL
 @export var resistances: Dictionary = {}
 
-# 狀態
-var current_hp: float
+var current_hp: float = 0.0
 var is_elite: bool = false
 var is_boss: bool = false
 var _is_dead: bool = false
 var status_controller: StatusController
-
-# 目標
 var target: Node2D = null
 
-# 層數倍率
 var hp_multiplier: float = 1.0
 var atk_multiplier: float = 1.0
+var abilities: PackedStringArray = PackedStringArray()
+var boss_ability_cooldown: float = 4.0
+var ability_projectile_count: int = 3
+var ability_spread_deg: float = 24.0
+var summon_active_cap: int = 6
+var summon_enemy_id: String = ""
+var summon_count: int = 0
+var summon_hp_multiplier: float = 0.55
+var summon_atk_multiplier: float = 0.8
+
 var elite_mods: Array[String] = []
+var elite_affix_lookup: Dictionary = {}
 var _elite_rage_applied: bool = false
 var _elite_life_leech_ratio: float = 0.0
 var _elite_thorns_ratio: float = 0.0
 var _elite_death_burst: bool = false
 var _elite_death_burst_radius: float = 80.0
 var _elite_death_burst_multiplier: float = 1.2
+var _elite_crusher_force: float = 0.0
+var _elite_barrage_projectiles: int = 1
+var _elite_barrage_spread_deg: float = 0.0
+var _elite_warding_threshold: float = 0.4
+var _elite_warding_ratio: float = 0.2
+var _elite_warding_duration: float = 3.0
+var _elite_warding_cooldown: float = 8.0
+var _elite_warding_cooldown_remaining: float = 0.0
+var _elite_warding_time_remaining: float = 0.0
+var _elite_warding_shield: float = 0.0
+
+var _boss_ability_cooldown_remaining: float = 0.0
+var _boss_phase_index: int = 0
+var _telegraph_active: bool = false
+var _telegraph_ability: String = ""
+var _telegraph_time_remaining: float = 0.0
+var _telegraph_duration: float = 0.0
+var _telegraph_damage_result: DamageCalculator.DamageResult = null
+var _telegraph_direction: Vector2 = Vector2.RIGHT
+var _telegraph_locked_distance: float = 0.0
 var _external_velocity: Vector2 = Vector2.ZERO
 var _rank_ring: Line2D = null
 var _rank_label: Label = null
@@ -63,46 +90,61 @@ func _ready() -> void:
 
 
 func _setup_attack_timer() -> void:
-	if attack_timer:
-		attack_timer.wait_time = 1.0 / atk_speed
+	if attack_timer == null:
+		return
+	attack_timer.wait_time = maxf(0.08, 1.0 / maxf(atk_speed, 0.1))
+	if not attack_timer.timeout.is_connected(_on_attack_timer_timeout):
 		attack_timer.timeout.connect(_on_attack_timer_timeout)
 
 
 func _find_player() -> void:
 	var players := get_tree().get_nodes_in_group("player")
 	if not players.is_empty():
-		target = players[0]
+		target = players[0] as Node2D
 
 
 func _physics_process(delta: float) -> void:
-	if _is_dead or target == null:
+	if _is_dead:
 		return
-
-	if status_controller and status_controller.is_frozen():
-		velocity = Vector2.ZERO
-		attack_timer.stop()
-		return
-
-	if not is_instance_valid(target):
+	if target == null or not is_instance_valid(target):
 		_find_player()
+		if target == null or not is_instance_valid(target):
+			return
+
+	if status_controller != null and status_controller.is_frozen():
+		velocity = Vector2.ZERO
+		if attack_timer != null:
+			attack_timer.stop()
 		return
+
+	_tick_runtime_effects(delta)
 	_apply_elite_runtime_states()
+	_apply_boss_runtime_states()
+
+	if _telegraph_active:
+		_tick_ability_telegraph(delta)
+		if _telegraph_active:
+			velocity = Vector2.ZERO
+			_external_velocity = Vector2.ZERO
+			move_and_slide()
+			if sprite != null and absf(_telegraph_direction.x) > 0.01:
+				sprite.flip_h = _telegraph_direction.x < 0.0
+			queue_redraw()
+			return
 
 	var distance := global_position.distance_to(target.global_position)
 	var engage_distance := _get_engage_distance()
 
-	# 進入攻擊距離就能出手；是否停下則由 engage_distance 控制。
 	if distance <= atk_range:
-		if attack_timer.is_stopped():
+		if attack_timer != null and attack_timer.is_stopped():
 			attack_timer.start()
 	else:
-		attack_timer.stop()
+		if attack_timer != null:
+			attack_timer.stop()
 
 	if distance <= engage_distance:
-		# 近身停下來攻擊
 		velocity = Vector2.ZERO
 	else:
-		# 追蹤玩家
 		var direction := (target.global_position - global_position).normalized()
 		velocity = direction * move_speed
 
@@ -112,9 +154,35 @@ func _physics_process(delta: float) -> void:
 
 	move_and_slide()
 
-	# 更新朝向
-	if velocity.x != 0 and sprite:
-		sprite.flip_h = velocity.x < 0
+	if sprite != null and velocity.x != 0.0:
+		sprite.flip_h = velocity.x < 0.0
+
+
+func _draw() -> void:
+	if not _telegraph_active:
+		return
+
+	var progress: float = 1.0 - (_telegraph_time_remaining / maxf(_telegraph_duration, 0.001))
+	match _telegraph_ability:
+		"charge":
+			_draw_charge_telegraph(progress)
+		"slam":
+			_draw_slam_telegraph(progress)
+		"nova":
+			_draw_nova_telegraph(progress)
+		_:
+			pass
+
+
+func _tick_runtime_effects(delta: float) -> void:
+	if _elite_warding_cooldown_remaining > 0.0:
+		_elite_warding_cooldown_remaining = maxf(0.0, _elite_warding_cooldown_remaining - delta)
+	if _elite_warding_time_remaining > 0.0:
+		_elite_warding_time_remaining = maxf(0.0, _elite_warding_time_remaining - delta)
+		if _elite_warding_time_remaining <= 0.0:
+			_elite_warding_shield = 0.0
+	if _boss_ability_cooldown_remaining > 0.0:
+		_boss_ability_cooldown_remaining = maxf(0.0, _boss_ability_cooldown_remaining - delta)
 
 
 func get_max_hp() -> float:
@@ -137,8 +205,7 @@ func take_damage(damage_result: DamageCalculator.DamageResult, attacker: Node) -
 	if _is_dead:
 		return
 
-	# 分通道承傷：物理吃防禦，元素吃各自抗性。
-	var attacker_stats: StatContainer = _extract_attacker_stats(attacker)
+	var attacker_stats := _extract_attacker_stats(attacker)
 	var armor_shred: float = 0.0
 	var phys_pen: float = 0.0
 	var element_pen: float = 0.0
@@ -149,14 +216,12 @@ func take_damage(damage_result: DamageCalculator.DamageResult, attacker: Node) -
 		element_pen = clampf(attacker_stats.get_stat(StatTypes.Stat.ELEMENTAL_PEN), 0.0, 0.95)
 		res_shred = clampf(attacker_stats.get_stat(StatTypes.Stat.RES_SHRED), 0.0, 0.95)
 
-	# 物理只套防禦與物理穿透。
 	var physical_damage := maxf(damage_result.physical_damage, 0.0)
-	var effective_def: float = maxf(base_def - armor_shred, 0.0)
+	var effective_def := maxf(base_def - armor_shred, 0.0)
 	var def_reduction := effective_def / (effective_def + 50.0)
 	def_reduction *= (1.0 - phys_pen)
 	physical_damage *= (1.0 - def_reduction)
 
-	# 元素只套抗性與元素穿透。
 	var fire_damage := maxf(damage_result.fire_damage, 0.0)
 	fire_damage *= (1.0 - _get_effective_resistance("fire", element_pen, res_shred))
 	var ice_damage := maxf(damage_result.ice_damage, 0.0)
@@ -165,41 +230,40 @@ func take_damage(damage_result: DamageCalculator.DamageResult, attacker: Node) -
 	lightning_damage *= (1.0 - _get_effective_resistance("lightning", element_pen, res_shred))
 
 	var total_damage := physical_damage + fire_damage + ice_damage + lightning_damage
-	if status_controller:
+	if status_controller != null:
 		total_damage *= status_controller.get_damage_taken_multiplier()
 
-	total_damage = maxf(total_damage, 1.0)  # 最少造成 1 點傷害
-	current_hp -= total_damage
+	total_damage = maxf(total_damage, 1.0)
+	var incoming_damage := total_damage
+	total_damage = _apply_warding_absorb(total_damage)
 	if _elite_thorns_ratio > 0.0:
-		_apply_thorns(attacker, total_damage)
+		_apply_thorns(attacker, incoming_damage)
 
-	# 顯示傷害數字
-	_spawn_damage_number(total_damage, damage_result, attacker)
+	if total_damage > 0.0:
+		current_hp -= total_damage
+		_spawn_damage_number(total_damage, damage_result, attacker)
 
-	# 受擊反饋
 	_on_hit()
 
-	if current_hp <= 0:
+	if current_hp <= 0.0:
 		_die()
 
 
-func apply_status_damage(amount: float, element: StatTypes.Element) -> void:
+func apply_status_damage(amount: float, effect_element: StatTypes.Element) -> void:
 	if _is_dead:
 		return
 	current_hp -= amount
-	if current_hp <= 0:
+	if current_hp <= 0.0:
 		_die()
 
 
 func _spawn_damage_number(damage: float, damage_result: DamageCalculator.DamageResult, source: Node) -> void:
-	# 發送事件，讓 UI 系統處理
-	var display_element := _get_primary_damage_element(damage_result)
-	var damage_info: Dictionary = {
+	var damage_info := {
 		"damage": damage,
 		"final_damage": damage,
 		"is_crit": damage_result.is_crit,
 		"position": global_position + Vector2(0, -20),
-		"element": display_element,
+		"element": _get_primary_damage_element(damage_result),
 	}
 	EventBus.damage_dealt.emit(source, self, damage_info)
 
@@ -220,35 +284,36 @@ func _get_primary_damage_element(damage_result: DamageCalculator.DamageResult) -
 		result = StatTypes.Element.ICE
 	if lightning > max_value:
 		result = StatTypes.Element.LIGHTNING
-
 	return result
 
 
 func _on_hit() -> void:
-	# 受擊閃爍效果
-	if sprite:
-		var original_color: Color = sprite.shape_color if "shape_color" in sprite else sprite.modulate
-		var tween := create_tween()
-		if "shape_color" in sprite:
-			tween.tween_property(sprite, "shape_color", Color.WHITE, 0.05)
-			tween.tween_property(sprite, "shape_color", original_color, 0.1)
-		else:
-			tween.tween_property(sprite, "modulate", Color.RED, 0.05)
-			tween.tween_property(sprite, "modulate", Color.WHITE, 0.1)
+	if sprite == null:
+		return
+	if "shape_color" in sprite:
+		var original_shape_color: Color = sprite.shape_color
+		var tween_shape := create_tween()
+		tween_shape.tween_property(sprite, "shape_color", Color.WHITE, 0.05)
+		tween_shape.tween_property(sprite, "shape_color", original_shape_color, 0.1)
+	else:
+		var original_modulate: Color = sprite.modulate
+		var tween_modulate := create_tween()
+		tween_modulate.tween_property(sprite, "modulate", Color.RED, 0.05)
+		tween_modulate.tween_property(sprite, "modulate", original_modulate, 0.1)
 
 
 func _die() -> void:
 	_is_dead = true
-	attack_timer.stop()
+	_clear_ability_telegraph()
+	if attack_timer != null:
+		attack_timer.stop()
 	if _elite_death_burst:
 		_trigger_death_burst()
 
-	# 發送死亡事件
 	died.emit(self)
 	EventBus.enemy_died.emit(self, global_position)
 
-	# 死亡動畫
-	if sprite:
+	if sprite != null:
 		var tween := create_tween()
 		tween.tween_property(sprite, "modulate:a", 0.0, 0.2)
 		tween.tween_callback(queue_free)
@@ -259,21 +324,27 @@ func _die() -> void:
 func _on_attack_timer_timeout() -> void:
 	if _is_dead or target == null or not is_instance_valid(target):
 		return
-
-	var distance := global_position.distance_to(target.global_position)
-	if distance > atk_range:
+	if _telegraph_active:
 		return
 
+	var distance := global_position.distance_to(target.global_position)
 	var damage_result := _build_attack_damage_result()
 	if damage_result == null:
 		return
 
+	if _try_use_special_ability(distance, damage_result):
+		return
+
+	if distance > atk_range:
+		return
+
 	if _should_fire_projectile():
-		_launch_projectile_attack(damage_result)
+		_launch_projectile_attack(damage_result, _elite_barrage_projectiles, _elite_barrage_spread_deg, _elite_barrage_projectiles <= 1)
 		return
 
 	if target.has_method("take_damage"):
 		target.take_damage(damage_result, self)
+		_apply_crusher_hit(target)
 		on_enemy_projectile_hit()
 
 
@@ -298,18 +369,51 @@ func _build_attack_damage_result() -> DamageCalculator.DamageResult:
 
 
 func _should_fire_projectile() -> bool:
-	return uses_projectile or behavior == "ranged"
+	return uses_projectile or behavior == "ranged" or behavior == "hit_and_run"
 
 
-func _launch_projectile_attack(damage_result: DamageCalculator.DamageResult) -> void:
+func _launch_projectile_attack(
+	damage_result: DamageCalculator.DamageResult,
+	projectile_count: int = 1,
+	spread_deg: float = 0.0,
+	tracking_enabled: bool = true
+) -> void:
 	if target == null or not is_instance_valid(target):
 		return
-	var projectile = ENEMY_PROJECTILE_SCRIPT.new() as EnemyProjectile
+
+	var count := maxi(1, projectile_count)
+	var base_direction := (target.global_position - global_position).normalized()
+	if base_direction == Vector2.ZERO:
+		base_direction = Vector2.RIGHT
+
+	if count == 1:
+		_spawn_enemy_projectile(damage_result, target, tracking_enabled, base_direction)
+		return
+
+	var spread_radians := deg_to_rad(spread_deg)
+	var start_angle := -spread_radians * 0.5
+	var step := 0.0 if count == 1 else spread_radians / float(count - 1)
+	for i in range(count):
+		var dir := base_direction.rotated(start_angle + step * float(i))
+		_spawn_enemy_projectile(damage_result, target, false, dir)
+
+
+func _spawn_enemy_projectile(
+	damage_result: DamageCalculator.DamageResult,
+	target_node: Node2D,
+	tracking_enabled: bool,
+	launch_direction: Vector2
+) -> void:
+	var projectile := ENEMY_PROJECTILE_SCRIPT.new() as EnemyProjectile
 	if projectile == null:
 		return
 	projectile.global_position = global_position
 	var proj_color: Color = StatTypes.ELEMENT_COLORS.get(element, Color(1.0, 0.5, 0.3, 1.0))
-	projectile.setup(self, target, damage_result, projectile_speed, proj_color)
+	var forced_target_position := Vector2.INF
+	if not tracking_enabled:
+		var travel_distance := maxf(atk_range * 2.0, 240.0)
+		forced_target_position = global_position + launch_direction.normalized() * travel_distance
+	projectile.setup(self, target_node, damage_result, projectile_speed, proj_color, tracking_enabled, forced_target_position)
 	get_parent().add_child(projectile)
 
 
@@ -324,13 +428,28 @@ func reset() -> void:
 	current_hp = get_max_hp()
 	target = null
 	velocity = Vector2.ZERO
+	abilities = PackedStringArray()
+	summon_enemy_id = ""
+	summon_count = 0
 	elite_mods.clear()
+	elite_affix_lookup.clear()
 	_elite_rage_applied = false
 	_elite_life_leech_ratio = 0.0
 	_elite_thorns_ratio = 0.0
 	_elite_death_burst = false
+	_elite_death_burst_radius = 80.0
+	_elite_death_burst_multiplier = 1.2
+	_elite_crusher_force = 0.0
+	_elite_barrage_projectiles = 1
+	_elite_barrage_spread_deg = 0.0
+	_elite_warding_cooldown_remaining = 0.0
+	_elite_warding_time_remaining = 0.0
+	_elite_warding_shield = 0.0
+	_boss_ability_cooldown_remaining = 0.0
+	_boss_phase_index = 0
+	_clear_ability_telegraph()
 	_external_velocity = Vector2.ZERO
-	if sprite:
+	if sprite != null:
 		sprite.modulate = Color.WHITE
 
 
@@ -342,58 +461,71 @@ func heal(amount: float) -> void:
 	current_hp = minf(current_hp + amount, get_max_hp())
 
 
-func apply_elite_mods(mods: Array[String]) -> void:
+func apply_elite_mods(mods: Array[String], affix_lookup: Dictionary = {}) -> void:
 	elite_mods = mods.duplicate()
+	elite_affix_lookup = affix_lookup.duplicate(true)
 	if elite_mods.is_empty():
 		return
+
 	is_elite = true
 	var original_name := display_name
 	for mod in elite_mods:
-		match mod:
-			"swift":
-				move_speed *= 1.35
-				atk_speed *= 1.20
-			"armored":
-				base_def += 10.0
-				hp_multiplier *= 1.25
-			"elemental_shield":
-				resistances["fire"] = clampf(float(resistances.get("fire", 0.0)) + 0.15, 0.0, 0.65)
-				resistances["ice"] = clampf(float(resistances.get("ice", 0.0)) + 0.15, 0.0, 0.65)
-				resistances["lightning"] = clampf(float(resistances.get("lightning", 0.0)) + 0.15, 0.0, 0.65)
-			"rage":
-				pass
-			"lifeleech":
-				_elite_life_leech_ratio += 0.25
-			"thorns":
-				_elite_thorns_ratio += 0.08
-			"death_burst":
-				_elite_death_burst = true
-			_:
-				pass
+		_apply_elite_affix(mod, elite_affix_lookup.get(mod, {}))
 
-	if attack_timer:
+	if attack_timer != null:
 		attack_timer.wait_time = maxf(0.08, 1.0 / maxf(atk_speed, 0.1))
 	current_hp = get_max_hp()
 	display_name = _build_elite_display_name(original_name)
 	_apply_rank_visual_marker()
 
 
+func _apply_elite_affix(mod: String, affix_data: Dictionary) -> void:
+	var stat_mods: Dictionary = affix_data.get("stat_mods", {})
+	move_speed *= float(stat_mods.get("move_speed_multiplier", 1.0))
+	atk_speed *= float(stat_mods.get("attack_speed_multiplier", 1.0))
+	hp_multiplier *= float(stat_mods.get("hp_multiplier", 1.0))
+	atk_multiplier *= float(stat_mods.get("attack_multiplier", 1.0))
+	base_def += float(stat_mods.get("base_def_flat", 0.0))
+
+	var all_res_flat := float(stat_mods.get("all_resistance_flat", 0.0))
+	if all_res_flat != 0.0:
+		for element_key in ["fire", "ice", "lightning"]:
+			resistances[element_key] = clampf(float(resistances.get(element_key, 0.0)) + all_res_flat, -0.5, 0.65)
+
+	var runtime_effect := str(affix_data.get("runtime_effect", mod))
+	match runtime_effect:
+		"rage":
+			pass
+		"lifeleech":
+			_elite_life_leech_ratio += float(affix_data.get("life_leech_ratio", 0.25))
+		"thorns":
+			_elite_thorns_ratio += float(affix_data.get("thorns_ratio", 0.08))
+		"death_burst":
+			_elite_death_burst = true
+			_elite_death_burst_radius = float(affix_data.get("death_burst_radius", 80.0))
+			_elite_death_burst_multiplier = float(affix_data.get("death_burst_multiplier", 1.2))
+		"crusher":
+			_elite_crusher_force = maxf(_elite_crusher_force, float(affix_data.get("crusher_force", 220.0)))
+		"barrage":
+			_elite_barrage_projectiles = maxi(_elite_barrage_projectiles, int(affix_data.get("projectile_count", 3)))
+			_elite_barrage_spread_deg = maxf(_elite_barrage_spread_deg, float(affix_data.get("spread_deg", 18.0)))
+		"warding":
+			_elite_warding_threshold = float(affix_data.get("trigger_threshold", 0.4))
+			_elite_warding_ratio = float(affix_data.get("shield_ratio", 0.2))
+			_elite_warding_duration = float(affix_data.get("shield_duration", 3.0))
+			_elite_warding_cooldown = float(affix_data.get("shield_cooldown", 8.0))
+		_:
+			pass
+
+
 func _build_elite_display_name(base_name: String) -> String:
 	if elite_mods.is_empty():
 		return base_name
-	var labels := {
-		"swift": "迅捷",
-		"armored": "厚甲",
-		"elemental_shield": "元素盾",
-		"rage": "狂怒",
-		"lifeleech": "吸血",
-		"thorns": "尖刺",
-		"death_burst": "爆裂",
-	}
 	var parts: Array[String] = []
 	for mod in elite_mods:
-		parts.append(str(labels.get(mod, mod)))
-	return "[精英:%s] %s" % ["+".join(parts), base_name]
+		var affix_data: Dictionary = elite_affix_lookup.get(mod, {})
+		parts.append(str(affix_data.get("display_name", mod)))
+	return "[Elite:%s] %s" % ["+".join(parts), base_name]
 
 
 func _apply_elite_runtime_states() -> void:
@@ -401,12 +533,338 @@ func _apply_elite_runtime_states() -> void:
 		_elite_rage_applied = true
 		atk_multiplier *= 1.5
 		move_speed *= 1.2
-		if sprite:
-			sprite.modulate = sprite.modulate.lightened(0.18)
+		_tint_sprite(_current_sprite_color().lightened(0.18))
+
+	if elite_mods.has("warding"):
+		var trigger_threshold_hp := get_max_hp() * _elite_warding_threshold
+		var can_activate := _elite_warding_shield <= 0.0 and _elite_warding_cooldown_remaining <= 0.0
+		if can_activate and current_hp <= trigger_threshold_hp:
+			_elite_warding_shield = get_max_hp() * _elite_warding_ratio
+			_elite_warding_time_remaining = _elite_warding_duration
+			_elite_warding_cooldown_remaining = _elite_warding_cooldown
+			_tint_sprite(_current_sprite_color().lightened(0.2))
+
+
+func _apply_boss_runtime_states() -> void:
+	if not is_boss:
+		return
+	while _boss_phase_index < BOSS_PHASE_THRESHOLDS.size():
+		var threshold := float(BOSS_PHASE_THRESHOLDS[_boss_phase_index])
+		if current_hp > get_max_hp() * threshold:
+			break
+		var phase_number: int = _boss_phase_index + 2
+		atk_multiplier *= 1.14
+		move_speed *= 1.08
+		boss_ability_cooldown = maxf(BOSS_MIN_COOLDOWN, boss_ability_cooldown - 0.45)
+		_boss_phase_index += 1
+		EventBus.boss_phase_changed.emit(self, phase_number)
+		_tint_sprite(_current_sprite_color().lightened(0.08))
+
+
+func _try_use_special_ability(distance: float, damage_result: DamageCalculator.DamageResult) -> bool:
+	if abilities.is_empty() or _boss_ability_cooldown_remaining > 0.0:
+		return false
+
+	var ability := _pick_special_ability(distance)
+	if ability.is_empty():
+		return false
+
+	var used := false
+	if _should_telegraph_ability(ability):
+		used = _start_ability_telegraph(ability, distance, damage_result)
+	else:
+		match ability:
+			"charge":
+				used = _use_charge_ability(distance, damage_result)
+			"slam":
+				used = _use_slam_ability(distance, damage_result)
+			"summon":
+				used = _use_summon_ability()
+			"barrage":
+				used = _use_barrage_ability(damage_result)
+			"nova":
+				used = _use_nova_ability(damage_result)
+			_:
+				used = false
+
+	if used:
+		if is_boss:
+			EventBus.enemy_ability_telegraphed.emit(self, ability)
+		var min_cooldown := 0.9 if not is_boss else BOSS_MIN_COOLDOWN
+		var phase_bonus := 0.25 * float(_boss_phase_index) if is_boss else 0.0
+		_boss_ability_cooldown_remaining = maxf(min_cooldown, boss_ability_cooldown - phase_bonus)
+	return used
+
+
+func _pick_special_ability(distance: float) -> String:
+	if not is_boss:
+		for ability_name in abilities:
+			var candidate := str(ability_name)
+			if _can_use_non_boss_ability(candidate, distance):
+				return candidate
+		return ""
+
+	var close_options: Array[String] = []
+	var ranged_options: Array[String] = []
+	var support_options: Array[String] = []
+
+	for ability_name in abilities:
+		var ability := str(ability_name)
+		match ability:
+			"charge", "slam":
+				close_options.append(ability)
+			"barrage", "nova":
+				ranged_options.append(ability)
+			"summon":
+				support_options.append(ability)
+
+	if distance <= 100.0 and not close_options.is_empty() and randf() < 0.75:
+		return close_options[randi() % close_options.size()]
+	if distance > 100.0 and not ranged_options.is_empty() and randf() < 0.75:
+		return ranged_options[randi() % ranged_options.size()]
+	if not support_options.is_empty() and randf() < 0.35:
+		return support_options[randi() % support_options.size()]
+	return str(abilities[randi() % abilities.size()])
+
+
+func _can_use_non_boss_ability(ability: String, distance: float) -> bool:
+	match ability:
+		"charge":
+			return distance <= maxf(atk_range * 3.2, 160.0)
+		"summon":
+			return true
+		"barrage":
+			return _should_fire_projectile()
+		"nova":
+			return distance <= maxf(atk_range * 1.2, 120.0)
+		"slam":
+			return distance <= maxf(atk_range * 1.35, 90.0)
+		_:
+			return false
+
+
+func _use_charge_ability(distance: float, damage_result: DamageCalculator.DamageResult) -> bool:
+	if target == null or not is_instance_valid(target) or distance > 170.0:
+		return false
+	var direction := (target.global_position - global_position).normalized()
+	if direction == Vector2.ZERO:
+		direction = Vector2.RIGHT
+	var dash_force := 420.0 if is_boss else 280.0
+	var damage_scale := 1.25 if is_boss else 1.05
+	var knockback_force := 280.0 if is_boss else 170.0
+	_external_velocity += direction * dash_force
+	if target.has_method("take_damage") and distance <= 145.0:
+		target.take_damage(_scaled_damage_result(damage_result, damage_scale), self)
+		if target.has_method("apply_knockback"):
+			target.apply_knockback(global_position, knockback_force)
+	return true
+
+
+func _use_slam_ability(distance: float, damage_result: DamageCalculator.DamageResult) -> bool:
+	if target == null or not is_instance_valid(target) or distance > 115.0:
+		return false
+	if target.has_method("take_damage"):
+		target.take_damage(_scaled_damage_result(damage_result, 1.65 if is_boss else 1.18), self)
+		if target.has_method("apply_knockback"):
+			target.apply_knockback(global_position, 340.0 if is_boss else 180.0)
+	return true
+
+
+func _use_summon_ability() -> bool:
+	if summon_enemy_id.is_empty():
+		return false
+	var parent_node := get_parent()
+	if parent_node == null or not parent_node.has_method("spawn_summoned_enemies"):
+		return false
+	var active_cap := summon_active_cap if not is_boss else BOSS_SUMMON_ACTIVE_CAP
+	if parent_node.has_method("get_active_enemy_count") and int(parent_node.call("get_active_enemy_count")) > active_cap:
+		return false
+	parent_node.call("spawn_summoned_enemies", self, summon_enemy_id, maxi(1, summon_count), summon_hp_multiplier, summon_atk_multiplier)
+	return true
+
+
+func _use_barrage_ability(damage_result: DamageCalculator.DamageResult) -> bool:
+	if target == null or not is_instance_valid(target):
+		return false
+	var projectile_count := 5 if is_boss else ability_projectile_count
+	var spread_deg := 32.0 if is_boss else ability_spread_deg
+	var scale := 0.72 if is_boss else 0.82
+	_launch_projectile_attack(_scaled_damage_result(damage_result, scale), projectile_count, spread_deg, false)
+	return true
+
+
+func _use_nova_ability(damage_result: DamageCalculator.DamageResult) -> bool:
+	var count := 8 if is_boss else 6
+	var scaled_result := _scaled_damage_result(damage_result, 0.55 if is_boss else 0.65)
+	for i in range(count):
+		var direction := Vector2.RIGHT.rotated(TAU * float(i) / float(count))
+		_spawn_enemy_projectile(scaled_result, target, false, direction)
+	return true
+
+
+func _should_telegraph_ability(ability: String) -> bool:
+	if not is_boss:
+		return false
+	return ability == "charge" or ability == "slam" or ability == "nova"
+
+
+func _start_ability_telegraph(
+	ability: String,
+	distance: float,
+	damage_result: DamageCalculator.DamageResult
+) -> bool:
+	if _telegraph_active:
+		return false
+
+	_telegraph_active = true
+	_telegraph_ability = ability
+	_telegraph_duration = _get_ability_telegraph_duration(ability)
+	_telegraph_time_remaining = _telegraph_duration
+	_telegraph_damage_result = damage_result
+	_telegraph_locked_distance = distance
+	_telegraph_direction = Vector2.RIGHT
+	if target != null and is_instance_valid(target):
+		_telegraph_direction = (target.global_position - global_position).normalized()
+	if _telegraph_direction == Vector2.ZERO:
+		_telegraph_direction = Vector2.RIGHT
+
+	velocity = Vector2.ZERO
+	_external_velocity = Vector2.ZERO
+	if attack_timer != null:
+		attack_timer.stop()
+	queue_redraw()
+	return true
+
+
+func _tick_ability_telegraph(delta: float) -> void:
+	if not _telegraph_active:
+		return
+
+	_telegraph_time_remaining = maxf(0.0, _telegraph_time_remaining - delta)
+	if _telegraph_time_remaining > 0.0:
+		return
+
+	_execute_telegraphed_ability()
+	_clear_ability_telegraph()
+
+
+func _execute_telegraphed_ability() -> void:
+	match _telegraph_ability:
+		"charge":
+			_execute_telegraphed_charge()
+		"slam":
+			if target != null and is_instance_valid(target):
+				_use_slam_ability(global_position.distance_to(target.global_position), _telegraph_damage_result)
+		"nova":
+			_use_nova_ability(_telegraph_damage_result)
+		_:
+			pass
+
+
+func _execute_telegraphed_charge() -> void:
+	var dash_force := 420.0 if is_boss else 280.0
+	var damage_scale := 1.25 if is_boss else 1.05
+	var knockback_force := 280.0 if is_boss else 170.0
+	_external_velocity += _telegraph_direction * dash_force
+	if target == null or not is_instance_valid(target):
+		return
+	var distance_to_target: float = global_position.distance_to(target.global_position)
+	if target.has_method("take_damage") and distance_to_target <= 145.0:
+		target.take_damage(_scaled_damage_result(_telegraph_damage_result, damage_scale), self)
+		if target.has_method("apply_knockback"):
+			target.apply_knockback(global_position, knockback_force)
+
+
+func _clear_ability_telegraph() -> void:
+	_telegraph_active = false
+	_telegraph_ability = ""
+	_telegraph_time_remaining = 0.0
+	_telegraph_duration = 0.0
+	_telegraph_damage_result = null
+	_telegraph_direction = Vector2.RIGHT
+	_telegraph_locked_distance = 0.0
+	queue_redraw()
+
+
+func _get_ability_telegraph_duration(ability: String) -> float:
+	match ability:
+		"charge":
+			return 0.55
+		"slam":
+			return 0.72
+		"nova":
+			return 0.88
+		_:
+			return 0.0
+
+
+func _draw_charge_telegraph(progress: float) -> void:
+	var pulse: float = sin(progress * TAU * 4.0) * 0.5 + 0.5
+	var length: float = clampf(maxf(_telegraph_locked_distance, 120.0), 120.0, 170.0)
+	var end_point: Vector2 = _telegraph_direction * length
+	var base_color: Color = Color(1.0, 0.42, 0.24, lerpf(0.18, 0.34, progress))
+	var core_color: Color = Color(1.0, 0.88, 0.62, lerpf(0.34, 0.92, progress))
+	var line_width: float = lerpf(14.0, 24.0, progress)
+	draw_line(Vector2.ZERO, end_point, base_color, line_width)
+	draw_line(Vector2.ZERO, end_point, core_color, 4.0 + pulse * 2.0)
+	draw_circle(end_point, 14.0 + progress * 10.0, Color(1.0, 0.36, 0.22, 0.14 + pulse * 0.16))
+	draw_arc(end_point, 12.0 + progress * 8.0, 0.0, TAU, 24, Color(1.0, 0.92, 0.68, 0.75), 2.4)
+
+
+func _draw_slam_telegraph(progress: float) -> void:
+	var pulse: float = sin(progress * TAU * 5.0) * 0.5 + 0.5
+	var radius: float = 90.0
+	var fill_alpha: float = lerpf(0.08, 0.24, progress)
+	var ring_alpha: float = lerpf(0.3, 0.92, progress)
+	draw_circle(Vector2.ZERO, radius, Color(0.95, 0.16, 0.12, fill_alpha))
+	draw_arc(Vector2.ZERO, radius, 0.0, TAU, 48, Color(1.0, 0.88, 0.62, ring_alpha), 3.2 + pulse * 2.4)
+	draw_arc(Vector2.ZERO, radius * lerpf(0.36, 0.82, progress), 0.0, TAU, 40, Color(1.0, 0.54, 0.24, 0.42 + pulse * 0.2), 2.4)
+
+
+func _draw_nova_telegraph(progress: float) -> void:
+	var pulse: float = sin(progress * TAU * 4.5) * 0.5 + 0.5
+	var radius: float = 72.0 + progress * 18.0
+	draw_circle(Vector2.ZERO, radius * 0.62, Color(0.46, 0.22, 1.0, lerpf(0.06, 0.16, progress)))
+	draw_arc(Vector2.ZERO, radius, 0.0, TAU, 48, Color(0.74, 0.5, 1.0, 0.38 + pulse * 0.18), 3.0)
+	draw_arc(Vector2.ZERO, radius + 10.0 + pulse * 6.0, 0.0, TAU, 48, Color(1.0, 0.88, 0.62, 0.22 + progress * 0.28), 2.0)
+	for i in range(8):
+		var direction: Vector2 = Vector2.RIGHT.rotated(TAU * float(i) / 8.0)
+		draw_line(
+			direction * (radius * 0.28),
+			direction * (radius + 18.0 + pulse * 8.0),
+			Color(0.96, 0.74, 1.0, 0.26 + progress * 0.34),
+			2.6
+		)
+
+
+func _scaled_damage_result(source: DamageCalculator.DamageResult, scale: float) -> DamageCalculator.DamageResult:
+	var result := DamageCalculator.DamageResult.new()
+	result.physical_damage = source.physical_damage * scale
+	result.fire_damage = source.fire_damage * scale
+	result.ice_damage = source.ice_damage * scale
+	result.lightning_damage = source.lightning_damage * scale
+	result.total_damage = source.total_damage * scale
+	result.is_crit = source.is_crit
+	return result
+
+
+func _apply_crusher_hit(target_node: Node) -> void:
+	if _elite_crusher_force <= 0.0:
+		return
+	if target_node != null and target_node.has_method("apply_knockback"):
+		target_node.apply_knockback(global_position, _elite_crusher_force)
+
+
+func _apply_warding_absorb(incoming_damage: float) -> float:
+	if _elite_warding_shield <= 0.0 or incoming_damage <= 0.0:
+		return incoming_damage
+	var absorbed := minf(incoming_damage, _elite_warding_shield)
+	_elite_warding_shield -= absorbed
+	return maxf(incoming_damage - absorbed, 0.0)
 
 
 func _get_effective_resistance(element_key: String, pen: float, shred: float) -> float:
-	var base_res: float = float(resistances.get(element_key, 0.0))
+	var base_res := float(resistances.get(element_key, 0.0))
 	return clampf(base_res - pen - shred, -0.5, 0.65)
 
 
@@ -421,7 +879,7 @@ func _extract_attacker_stats(attacker: Node) -> StatContainer:
 func _apply_thorns(attacker: Node, incoming_damage: float) -> void:
 	if attacker == null or not attacker.has_method("take_damage"):
 		return
-	var reflected: float = maxf(incoming_damage * _elite_thorns_ratio, 1.0)
+	var reflected := maxf(incoming_damage * _elite_thorns_ratio, 1.0)
 	var result := DamageCalculator.DamageResult.new()
 	result.physical_damage = reflected
 	result.total_damage = reflected
@@ -435,40 +893,34 @@ func _trigger_death_burst() -> void:
 		return
 	if not target.has_method("take_damage"):
 		return
-	var dmg := maxf(get_attack_damage() * _elite_death_burst_multiplier, 1.0)
+	var damage := maxf(get_attack_damage() * _elite_death_burst_multiplier, 1.0)
 	var result := DamageCalculator.DamageResult.new()
-	result.physical_damage = dmg
-	result.total_damage = dmg
+	result.physical_damage = damage
+	result.total_damage = damage
 	target.take_damage(result, self)
 
 
 func _apply_rank_visual_marker() -> void:
 	if sprite == null:
 		return
+
 	if is_boss:
 		sprite.scale = Vector2(1.45, 1.45)
-		if "shape_color" in sprite:
-			sprite.shape_color = Color(1.0, 0.25, 0.32, 1.0)
-			if "shape_type" in sprite:
-				sprite.shape_type = 1
-		else:
-			sprite.modulate = Color(1.0, 0.25, 0.32, 1.0)
-		if not display_name.begins_with("【BOSS】"):
-			display_name = "【BOSS】%s" % display_name
+		_tint_sprite(Color(1.0, 0.25, 0.32, 1.0))
+		if not display_name.begins_with("BOSS "):
+			display_name = "BOSS %s" % display_name
 		_ensure_rank_ring(Color(1.0, 0.2, 0.25, 0.95), 18.0, 2.8)
 		_ensure_rank_label("BOSS", Color(1.0, 0.3, 0.35, 1.0))
 		return
+
 	if is_elite:
 		sprite.scale = Vector2(1.22, 1.22)
-		if "shape_color" in sprite:
-			sprite.shape_color = Color(1.0, 0.82, 0.25, 1.0)
-			if "shape_type" in sprite:
-				sprite.shape_type = 2
-		else:
-			sprite.modulate = Color(1.0, 0.82, 0.25, 1.0)
+		_tint_sprite(Color(1.0, 0.82, 0.25, 1.0))
 		_ensure_rank_ring(Color(1.0, 0.82, 0.25, 0.9), 14.0, 2.0)
 		_clear_rank_label()
 		return
+
+	sprite.scale = Vector2.ONE
 	_clear_rank_ring()
 	_clear_rank_label()
 
@@ -522,11 +974,27 @@ func _get_body_radius(node: Node) -> float:
 		return 10.0
 	var shape_node := node.get_node_or_null("CollisionShape2D")
 	if shape_node is CollisionShape2D:
-		var collision := shape_node as CollisionShape2D
-		if collision.shape is CircleShape2D:
-			var circle := collision.shape as CircleShape2D
-			return circle.radius
+		var collision_node := shape_node as CollisionShape2D
+		if collision_node.shape is CircleShape2D:
+			return (collision_node.shape as CircleShape2D).radius
 	return 10.0
+
+
+func _tint_sprite(color: Color) -> void:
+	if sprite == null:
+		return
+	if "shape_color" in sprite:
+		sprite.shape_color = color
+	else:
+		sprite.modulate = color
+
+
+func _current_sprite_color() -> Color:
+	if sprite == null:
+		return Color.WHITE
+	if "shape_color" in sprite:
+		return sprite.shape_color
+	return sprite.modulate
 
 
 func apply_knockback(source_position: Vector2, force: float) -> void:
