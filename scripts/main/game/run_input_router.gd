@@ -7,7 +7,8 @@ func handle_key_input(
 	scene_flow_service: RunSceneFlowService,
 	challenge_handler: Callable,
 	panel_toggle_handler: Callable,
-	pickup_all_handler: Callable
+	pickup_all_handler: Callable,
+	auto_move_toggle_handler: Callable
 ) -> bool:
 	if scene_flow_service.handle_key_input(keycode):
 		return true
@@ -23,6 +24,10 @@ func handle_key_input(
 			return _toggle_panel(panel_toggle_handler, "skill")
 		KEY_M:
 			return _toggle_panel(panel_toggle_handler, "module")
+		KEY_V:
+			if auto_move_toggle_handler.is_valid():
+				auto_move_toggle_handler.call()
+			return true
 		KEY_Z:
 			if pickup_all_handler.is_valid():
 				pickup_all_handler.call()

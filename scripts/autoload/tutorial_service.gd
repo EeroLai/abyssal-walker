@@ -79,9 +79,9 @@ func maybe_show_first_extraction_tip(hud: Control) -> void:
 	var action := await _present_step(
 		_resolve_overlay_parent(hud),
 		_resolve_anchor(hud, "extraction_prompt"),
-		_text("extraction_title"),
-		_text("extraction_body"),
-		_text("continue"),
+		"extraction_title",
+		"extraction_body",
+		"continue",
 		""
 	)
 	if action.is_empty():
@@ -112,10 +112,10 @@ func _resume_lobby_tutorial(lobby: Control) -> void:
 		var action := await _present_step(
 			_resolve_overlay_parent(lobby),
 			_resolve_anchor(lobby, "prep_toggle"),
-			_text("lobby_prep_title"),
-			_text("lobby_prep_body"),
-			_text("continue"),
-			_text("skip")
+			"lobby_prep_title",
+			"lobby_prep_body",
+			"continue",
+			"skip"
 		)
 		if action == "skip":
 			_lobby_progress = LOBBY_PROGRESS_COMPLETE
@@ -133,10 +133,10 @@ func _handle_lobby_build_prep_opened(lobby: Control) -> void:
 	var action := await _present_step(
 		_resolve_overlay_parent(lobby),
 		_resolve_anchor(lobby, "quick_equip"),
-		_text("lobby_build_title"),
-		_text("lobby_build_body"),
-		_text("continue"),
-		_text("skip")
+		"lobby_build_title",
+		"lobby_build_body",
+		"continue",
+		"skip"
 	)
 	if action == "skip":
 		_lobby_progress = LOBBY_PROGRESS_COMPLETE
@@ -157,10 +157,10 @@ func _show_lobby_beacon_step(lobby: Control) -> void:
 	var action := await _present_step(
 		_resolve_overlay_parent(lobby),
 		_resolve_anchor(lobby, "start_button"),
-		_text("lobby_beacon_title"),
-		_text("lobby_beacon_body"),
-		_text("continue"),
-		_text("skip")
+		"lobby_beacon_title",
+		"lobby_beacon_body",
+		"continue",
+		"skip"
 	)
 	if action.is_empty():
 		return
@@ -171,10 +171,10 @@ func _show_lobby_beacon_step(lobby: Control) -> void:
 func _present_step(
 	parent: Node,
 	target: Control,
-	title: String,
-	body: String,
-	continue_text: String,
-	skip_text: String
+	title_key: String,
+	body_key: String,
+	continue_key: String,
+	skip_key: String
 ) -> String:
 	if parent == null or not is_instance_valid(parent):
 		return ""
@@ -183,7 +183,7 @@ func _present_step(
 		return ""
 
 	_is_presenting = true
-	var action: String = await overlay.present(target, title, body, continue_text, skip_text)
+	var action: String = await overlay.present(target, title_key, body_key, continue_key, skip_key)
 	_is_presenting = false
 	return action
 

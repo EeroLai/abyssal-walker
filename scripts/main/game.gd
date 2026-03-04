@@ -107,6 +107,8 @@ func _connect_signals() -> void:
 	if hud:
 		if hud.has_signal("challenge_failed_floor_requested"):
 			hud.challenge_failed_floor_requested.connect(_on_challenge_failed_floor_requested)
+		if hud.has_signal("auto_move_toggle_requested"):
+			hud.auto_move_toggle_requested.connect(_on_auto_move_toggle_requested)
 		if hud.has_signal("run_summary_confirmed"):
 			hud.run_summary_confirmed.connect(_on_run_summary_confirmed)
 
@@ -123,6 +125,7 @@ func _spawn_player() -> void:
 		player.global_position = Vector2(640, 360)
 
 	add_child(player)
+	player.set_auto_move_enabled(GameManager.is_auto_move_enabled())
 	_configure_player_camera()
 	if hud:
 		hud.bind_player(player)
@@ -385,7 +388,8 @@ func _input(event: InputEvent) -> void:
 			_run_scene_flow_service,
 			Callable(self, "_challenge_pending_failed_floor"),
 			Callable(self, "_toggle_panel_by_id"),
-			Callable(self, "_pickup_all_items")
+			Callable(self, "_pickup_all_items"),
+			Callable(self, "_toggle_player_auto_move")
 		):
 			get_viewport().set_input_as_handled()
 
@@ -428,6 +432,24 @@ func _pickup_all_items() -> void:
 	for item in dropped_items:
 		if item is DroppedItem and item.can_auto_pickup():
 			item.start_magnet(player)
+
+
+func _toggle_player_auto_move() -> void:
+	if player == null:
+		return
+	var next_enabled: bool = not player.is_auto_move_enabled()
+	_set_player_auto_move_enabled(next_enabled)
+
+
+func _on_auto_move_toggle_requested(enabled: bool) -> void:
+	_set_player_auto_move_enabled(enabled)
+
+
+func _set_player_auto_move_enabled(enabled: bool) -> void:
+	GameManager.set_auto_move_enabled(enabled)
+	if player == null:
+		return
+	player.set_auto_move_enabled(enabled)
 
 
 func _on_panel_navigate(panel_id: String) -> void:

@@ -66,7 +66,7 @@ func run_extraction_window(
 	if hud != null and hud.has_method("set_extraction_prompt"):
 		hud.set_extraction_prompt(
 			true,
-			"Extraction window (%d sec left)\n[E] Extract now    [F] Continue\nNo choice: auto-continue" % int(ceili(duration))
+			_format_extraction_prompt(int(ceili(duration)))
 		)
 	await TutorialService.maybe_show_first_extraction_tip(hud)
 
@@ -76,7 +76,7 @@ func run_extraction_window(
 		if hud != null and hud.has_method("set_extraction_prompt"):
 			hud.set_extraction_prompt(
 				true,
-				"Extraction window (%d sec left)\n[E] Extract now    [F] Continue\nNo choice: auto-continue" % remaining_sec
+				_format_extraction_prompt(remaining_sec)
 			)
 		await owner.get_tree().process_frame
 		elapsed += owner.get_process_delta_time()
@@ -86,6 +86,14 @@ func run_extraction_window(
 		hud.set_extraction_prompt(false, "")
 	GameManager.close_extraction_window(floor_number, extraction_selected, player)
 	return extraction_selected
+
+
+func _format_extraction_prompt(seconds: int) -> String:
+	return LocalizationService.format(
+		"ui.hud.extraction_prompt_window",
+		{"seconds": seconds},
+		"Extraction window ({seconds}s left)\n[E] Extract now    [F] Continue\nNo choice: auto-continue"
+	)
 
 
 func wait_for_run_summary(

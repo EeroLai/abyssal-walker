@@ -4,6 +4,18 @@ extends Control
 const HIGHLIGHT_PADDING := 10.0
 const CARD_MARGIN := 18.0
 const CARD_WIDTH := 360.0
+const TEXT_FALLBACKS := {
+	"continue": "Continue",
+	"skip": "Skip Tutorial",
+	"lobby_prep_title": "Prepare Before You Dive",
+	"lobby_prep_body": "Open Build Prep before your first run. It is where you move gear from stash into your active build.",
+	"lobby_build_title": "Build Prep",
+	"lobby_build_body": "Left side is stash, right side is your current build. Use Quick Equip if you want a fast starter loadout.",
+	"lobby_beacon_title": "Choose The Dive",
+	"lobby_beacon_body": "Pick a Beacon from the grid, or use Baseline Dive when inventory is empty. Then press Start to enter the abyss.",
+	"extraction_title": "Extraction Window",
+	"extraction_body": "Press [E] to extract safely with your current rewards, or [F] to keep pushing deeper for more loot. If you do nothing, the run continues.",
+}
 
 @onready var dim_rect: ColorRect = $Dim
 @onready var highlight: PanelContainer = $Highlight
@@ -15,6 +27,10 @@ const CARD_WIDTH := 360.0
 
 var _target: Control = null
 var _pending_action: String = ""
+var _title_key: String = ""
+var _body_key: String = ""
+var _continue_key: String = ""
+var _skip_key: String = ""
 
 
 func _ready() -> void:
@@ -57,6 +73,8 @@ func _ready() -> void:
 	skip_button.custom_minimum_size = Vector2(112.0, 34.0)
 	continue_button.pressed.connect(_on_continue_pressed)
 	skip_button.pressed.connect(_on_skip_pressed)
+	if not LocalizationService.locale_changed.is_connected(_on_locale_changed):
+		LocalizationService.locale_changed.connect(_on_locale_changed)
 
 
 func _process(_delta: float) -> void:
@@ -81,18 +99,18 @@ func _gui_input(event: InputEvent) -> void:
 
 func present(
 	target: Control,
-	title: String,
-	body: String,
-	continue_text: String,
-	skip_text: String = ""
+	title_key: String,
+	body_key: String,
+	continue_key: String,
+	skip_key: String = ""
 ) -> String:
 	_target = target
 	_pending_action = ""
-	title_label.text = title
-	body_label.text = body
-	continue_button.text = continue_text
-	skip_button.visible = not skip_text.is_empty()
-	skip_button.text = skip_text
+	_title_key = title_key
+	_body_key = body_key
+	_continue_key = continue_key
+	_skip_key = skip_key
+	_apply_texts()
 	visible = true
 	await get_tree().process_frame
 	_update_layout()
@@ -162,3 +180,24 @@ func _on_skip_pressed() -> void:
 func _finish(action: String) -> void:
 	if _pending_action.is_empty():
 		_pending_action = action
+
+
+func _on_locale_changed(_locale: String) -> void:
+	if visible:
+		_apply_texts()
+		await get_tree().process_frame
+		_update_layout()
+
+
+func _apply_texts() -> void:
+	title_label.text = _text(_title_key)
+	body_label.text = _text(_body_key)
+	continue_button.text = _text(_continue_key)
+	skip_button.visible = not _skip_key.is_empty()
+	skip_button.text = _text(_skip_key)
+
+
+func _text(key: String) -> String:
+	if key.is_empty():
+		return ""
+	return LocalizationService.text("ui.tutorial.%s" % key, str(TEXT_FALLBACKS.get(key, key)))

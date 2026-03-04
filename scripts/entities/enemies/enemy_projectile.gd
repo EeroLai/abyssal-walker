@@ -9,7 +9,7 @@ var hit_radius: float = 12.0
 var _target_position: Vector2 = Vector2.ZERO
 var _lifetime: float = 4.0
 var _color: Color = Color(1.0, 0.5, 0.3, 1.0)
-var _tracking_enabled: bool = true
+var _tracking_enabled: bool = false
 
 
 func setup(
@@ -18,7 +18,7 @@ func setup(
 	dmg: DamageCalculator.DamageResult,
 	projectile_speed: float,
 	proj_color: Color,
-	tracking_enabled: bool = true,
+	tracking_enabled: bool = false,
 	forced_target_position: Vector2 = Vector2.INF
 ) -> void:
 	source = src

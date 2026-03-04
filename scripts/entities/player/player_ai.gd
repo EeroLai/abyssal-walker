@@ -82,6 +82,8 @@ func _update_state() -> void:
 
 	var dist := player.global_position.distance_to(nearest.global_position)
 	var attack_range := _get_ai_attack_range()
+	if _is_melee_build():
+		attack_range = player.get_melee_attack_entry_distance(nearest, attack_range)
 
 	if dist <= attack_range:
 		current_state = AIState.ATTACKING
@@ -144,9 +146,12 @@ func get_movement_velocity() -> Vector2:
 		AIState.ATTACKING:
 			if _is_melee_build():
 				if player.current_target and is_instance_valid(player.current_target):
-					var melee_range := _get_ai_attack_range()
+					var melee_range: float = player.get_melee_attack_hold_distance(
+						player.current_target as Node2D,
+						_get_ai_attack_range()
+					)
 					var dist := player.global_position.distance_to(player.current_target.global_position)
-					if dist > melee_range * 0.9:
+					if dist > melee_range:
 						var dir := (player.current_target.global_position - player.global_position).normalized()
 						return dir * move_speed
 				return Vector2.ZERO
@@ -177,7 +182,7 @@ func _is_melee_build() -> bool:
 
 
 func _get_ai_attack_range() -> float:
-	var base_range := player.get_attack_range()
+	var base_range: float = player.get_auto_move_attack_range()
 	return base_range
 
 

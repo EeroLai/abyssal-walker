@@ -72,6 +72,7 @@ var _lobby_view_binder: LobbyViewBinder = LOBBY_VIEW_BINDER.new()
 var _build_buttons: Dictionary = {}
 var _guide_button: Button = null
 var _guide_panel: Control = null
+var _top_tools_row: HBoxContainer = null
 var _language_row: HBoxContainer = null
 var _language_label: Label = null
 var _language_option: OptionButton = null
@@ -227,29 +228,37 @@ func _ensure_guide_button() -> void:
 func _setup_language_selector() -> void:
 	if root_content == null:
 		return
-	var build_row := root_content.get_node_or_null("BuildButtonsRow") as Container
-	if build_row == null:
-		return
-	if build_row.get_node_or_null("LanguageRow") != null:
-		_language_row = build_row.get_node("LanguageRow") as HBoxContainer
+	if root_content.get_node_or_null("TopToolsRow") != null:
+		_top_tools_row = root_content.get_node("TopToolsRow") as HBoxContainer
+		_language_row = _top_tools_row.get_node_or_null("LanguageRow") as HBoxContainer
 		_language_label = _language_row.get_node_or_null("LanguageLabel") as Label
 		_language_option = _language_row.get_node_or_null("LanguageOption") as OptionButton
 		return
 
+	_top_tools_row = HBoxContainer.new()
+	_top_tools_row.name = "TopToolsRow"
+	_top_tools_row.alignment = BoxContainer.ALIGNMENT_END
+	_top_tools_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_top_tools_row.add_theme_constant_override("separation", 0)
+	root_content.add_child(_top_tools_row)
+	root_content.move_child(_top_tools_row, 0)
+
 	_language_row = HBoxContainer.new()
 	_language_row.name = "LanguageRow"
+	_language_row.alignment = BoxContainer.ALIGNMENT_END
 	_language_row.add_theme_constant_override("separation", 8)
+	_top_tools_row.add_child(_language_row)
 
 	_language_label = Label.new()
 	_language_label.name = "LanguageLabel"
+	_language_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_language_label.add_theme_color_override("font_color", Color(0.72, 0.86, 0.98, 0.96))
 	_language_row.add_child(_language_label)
 
 	_language_option = OptionButton.new()
 	_language_option.name = "LanguageOption"
-	_language_option.custom_minimum_size = Vector2(128, 30)
+	_language_option.custom_minimum_size = Vector2(112, 28)
 	_language_row.add_child(_language_option)
-
-	build_row.add_child(_language_row)
 
 
 func _get_build_button_entries() -> Array[Dictionary]:

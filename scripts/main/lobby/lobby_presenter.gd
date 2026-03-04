@@ -141,7 +141,7 @@ func on_loadout_category_selected(_index: int = -1) -> void:
 
 
 func refresh_all() -> void:
-	refresh_beacon_preview()
+	refresh_beacon_inventory()
 	refresh_summary()
 	refresh_stash_list()
 	refresh_loadout_list()

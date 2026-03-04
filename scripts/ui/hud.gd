@@ -3,6 +3,7 @@ extends Control
 
 signal challenge_failed_floor_requested
 signal run_summary_confirmed
+signal auto_move_toggle_requested(enabled: bool)
 
 @onready var floor_label: Label = $FloorLabel
 @onready var hp_bar: ProgressBar = $HPBar
@@ -12,6 +13,7 @@ signal run_summary_confirmed
 @onready var enemy_count_label: Label = $EnemyCountLabel
 @onready var inventory_label: Label = $InventoryLabel
 @onready var status_icons: HBoxContainer = $StatusIcons
+@onready var key_hint_label: Label = $KeyHintLabel
 
 var kills: int = 0
 var active_status_nodes: Dictionary = {}
@@ -20,6 +22,7 @@ var _pickup_entries: Array[Dictionary] = []
 var _pickup_labels: Array[Label] = []
 var loot_filter_label: Label = null
 var operation_label: Label = null
+var auto_move_button: Button = null
 var boss_panel: PanelContainer = null
 var boss_name_label: Label = null
 var boss_phase_label: Label = null
@@ -56,6 +59,7 @@ var _boss_last_known_max_hp: float = -1.0
 var _boss_damage_flash: float = 0.0
 var _boss_phase_flash: float = 0.0
 var _boss_low_hp_pulse_time: float = 0.0
+var _updating_auto_move_button: bool = false
 
 const PICKUP_FEED_MAX: int = 6
 const PICKUP_SHOW_TIME: float = 2.6
@@ -66,6 +70,7 @@ func _ready() -> void:
 	_create_pickup_feed()
 	_create_loot_filter_label()
 	_create_operation_label()
+	_create_auto_move_button()
 	_create_boss_panel()
 	_create_extraction_prompt_label()
 	_create_run_summary_panel()
@@ -225,9 +230,16 @@ func _on_enemy_ability_telegraphed(enemy: Node, ability: String) -> void:
 
 
 func bind_player(player_node: Player) -> void:
+	if tracked_player != null and tracked_player.auto_move_changed.is_connected(_on_player_auto_move_changed):
+		tracked_player.auto_move_changed.disconnect(_on_player_auto_move_changed)
 	tracked_player = player_node
 	if tracked_player != null:
+		if not tracked_player.auto_move_changed.is_connected(_on_player_auto_move_changed):
+			tracked_player.auto_move_changed.connect(_on_player_auto_move_changed)
 		update_inventory(tracked_player.get_inventory_size())
+		_refresh_auto_move_button(tracked_player.is_auto_move_enabled())
+	else:
+		_refresh_auto_move_button(GameManager.is_auto_move_enabled())
 
 
 func update_floor(floor_number: int) -> void:
@@ -271,6 +283,40 @@ func _on_item_picked_up(_item_data: Variant) -> void:
 func update_inventory(count: int) -> void:
 	if inventory_label:
 		inventory_label.text = _fmt("ui.hud.inventory", {"count": count}, "Inventory: {count}/60")
+
+
+func _on_auto_move_button_pressed() -> void:
+	if auto_move_button == null or _updating_auto_move_button:
+		return
+	auto_move_toggle_requested.emit(auto_move_button.button_pressed)
+
+
+func _on_player_auto_move_changed(enabled: bool) -> void:
+	_refresh_auto_move_button(enabled)
+	var key: String = "ui.hud.auto_move_enabled" if enabled else "ui.hud.auto_move_disabled"
+	var fallback: String = "Auto Move enabled" if enabled else "Auto Move disabled"
+	var color: Color = Color(0.66, 1.0, 0.78) if enabled else Color(1.0, 0.68, 0.62)
+	_add_feed_entry("auto_move_state", _t(key, fallback), 1, color)
+
+
+func _refresh_auto_move_button(enabled: bool) -> void:
+	if auto_move_button == null:
+		return
+	_updating_auto_move_button = true
+	auto_move_button.button_pressed = enabled
+	auto_move_button.text = _fmt(
+		"ui.hud.auto_move_toggle",
+		{"state": _auto_move_state_text(enabled)},
+		"[V] Auto Move: {state}"
+	)
+	auto_move_button.modulate = Color(0.82, 1.0, 0.88, 0.95) if enabled else Color(1.0, 0.82, 0.82, 0.95)
+	_updating_auto_move_button = false
+
+
+func _auto_move_state_text(enabled: bool) -> String:
+	if enabled:
+		return _t("ui.hud.auto_move_state_on", "ON")
+	return _t("ui.hud.auto_move_state_off", "OFF")
 
 
 func _on_status_applied(target: Node, status_type: String, stacks: int) -> void:
@@ -437,6 +483,26 @@ func _create_operation_label() -> void:
 	operation_label.add_theme_font_size_override("font_size", 13)
 	operation_label.modulate = Color(0.72, 0.95, 1.0, 0.95)
 	add_child(operation_label)
+
+
+func _create_auto_move_button() -> void:
+	auto_move_button = Button.new()
+	auto_move_button.name = "AutoMoveButton"
+	auto_move_button.anchor_left = 0.0
+	auto_move_button.anchor_top = 0.0
+	auto_move_button.anchor_right = 0.0
+	auto_move_button.anchor_bottom = 0.0
+	auto_move_button.offset_left = 20.0
+	auto_move_button.offset_top = 176.0
+	auto_move_button.offset_right = 210.0
+	auto_move_button.offset_bottom = 206.0
+	auto_move_button.focus_mode = Control.FOCUS_NONE
+	auto_move_button.toggle_mode = true
+	auto_move_button.mouse_filter = Control.MOUSE_FILTER_STOP
+	auto_move_button.add_theme_font_size_override("font_size", 13)
+	auto_move_button.pressed.connect(_on_auto_move_button_pressed)
+	add_child(auto_move_button)
+	_refresh_auto_move_button(GameManager.is_auto_move_enabled())
 
 
 func _create_boss_panel() -> void:
@@ -1151,6 +1217,9 @@ func _on_locale_changed(_locale: String) -> void:
 	_refresh_loot_filter_label()
 	_on_operation_session_changed(GameManager.get_operation_summary())
 	_refresh_boss_panel()
+	_refresh_auto_move_button(
+		tracked_player.is_auto_move_enabled() if tracked_player != null else GameManager.is_auto_move_enabled()
+	)
 
 
 func _apply_localized_texts() -> void:
@@ -1158,6 +1227,11 @@ func _apply_localized_texts() -> void:
 		run_summary_title.text = _t("ui.hud.run_summary", "Run Summary")
 	if run_summary_footer != null:
 		run_summary_footer.text = _t("ui.hud.return_lobby", "Press [E] to return to Lobby")
+	if key_hint_label != null:
+		key_hint_label.text = _t(
+			"ui.hud.key_hint",
+			"[I] Equipment  [K] Skills  [M] Modules  [V] Auto Move  [Z] Pickup  [ESC] Pause"
+		)
 	if progression_mode_label != null and progression_mode_label.text.is_empty():
 		progression_mode_label.text = _t("ui.hud.progression_mode_push", "Mode: Push")
 	if progression_retry_button != null:
@@ -1170,6 +1244,9 @@ func _apply_localized_texts() -> void:
 				update_floor(int(result.get_string(1)))
 	if kills_label != null:
 		_on_kill_count_changed(kills)
+	_refresh_auto_move_button(
+		tracked_player.is_auto_move_enabled() if tracked_player != null else GameManager.is_auto_move_enabled()
+	)
 	_refresh_boss_panel()
 
 

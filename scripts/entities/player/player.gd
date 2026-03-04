@@ -3,6 +3,7 @@ extends CharacterBody2D
 
 signal health_changed(current: float, max_hp: float)
 signal died
+signal auto_move_changed(enabled: bool)
 
 const PROJECTILE_SCENE := preload("res://scenes/entities/projectile.tscn")
 const MELEE_EFFECT_SCENE := preload("res://scenes/effects/melee_effect.tscn")
@@ -57,6 +58,7 @@ var _direct_hit_grace_remaining: float = 0.0
 
 var ai: PlayerAI
 var current_target: Node2D = null
+var auto_move_enabled: bool = true
 
 
 func _ready() -> void:
@@ -131,8 +133,13 @@ func _physics_process(delta: float) -> void:
 		_apply_virtual_walls()
 		return
 
-	if ai:
+	var manual_move_input: Vector2 = _get_manual_move_input()
+	if manual_move_input != Vector2.ZERO:
+		velocity = manual_move_input * get_move_speed()
+	elif auto_move_enabled and ai:
 		velocity = ai.get_movement_velocity()
+	else:
+		velocity = Vector2.ZERO
 
 	move_and_slide()
 	_apply_virtual_walls()
@@ -164,6 +171,71 @@ func get_attack_range() -> float:
 	if gem_link.skill_gem:
 		return gem_link.skill_gem.get_effective_range()
 	return 50.0
+
+
+func get_auto_move_attack_range() -> float:
+	var base_range: float = get_attack_range()
+	if gem_link == null or gem_link.skill_gem == null:
+		return base_range
+
+	var skill: SkillGem = gem_link.skill_gem
+	if not skill.has_tag(StatTypes.SkillTag.MELEE):
+		return base_range
+	if not skill.has_tag(StatTypes.SkillTag.AOE):
+		return base_range
+
+	var support_mods: Dictionary = gem_link.get_combined_modifiers()
+	var area_multiplier: float = maxf(float(support_mods.get("area_multiplier", 1.0)), 0.1)
+	return base_range * area_multiplier
+
+
+func get_melee_attack_entry_distance(target_node: Node2D, max_range: float = -1.0) -> float:
+	var resolved_range: float = _resolve_melee_range(max_range)
+	var reach_distance: float = _get_melee_target_reach_distance(target_node, resolved_range)
+	var entry_buffer: float = clampf(resolved_range * 0.12, 3.0, 8.0)
+	return maxf(18.0, reach_distance - entry_buffer)
+
+
+func get_melee_attack_hold_distance(target_node: Node2D, max_range: float = -1.0) -> float:
+	var resolved_range: float = _resolve_melee_range(max_range)
+	var reach_distance: float = _get_melee_target_reach_distance(target_node, resolved_range)
+	var hold_buffer: float = clampf(resolved_range * 0.18, 6.0, 12.0)
+	return maxf(16.0, reach_distance - hold_buffer)
+
+
+func is_auto_move_enabled() -> bool:
+	return auto_move_enabled
+
+
+func set_auto_move_enabled(enabled: bool) -> void:
+	if auto_move_enabled == enabled:
+		return
+	auto_move_enabled = enabled
+	auto_move_changed.emit(auto_move_enabled)
+
+
+func toggle_auto_move_enabled() -> bool:
+	set_auto_move_enabled(not auto_move_enabled)
+	return auto_move_enabled
+
+
+func _get_manual_move_input() -> Vector2:
+	var horizontal: float = 0.0
+	var vertical: float = 0.0
+
+	if Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT):
+		horizontal -= 1.0
+	if Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT):
+		horizontal += 1.0
+	if Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP):
+		vertical -= 1.0
+	if Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN):
+		vertical += 1.0
+
+	var move_input: Vector2 = Vector2(horizontal, vertical)
+	if move_input == Vector2.ZERO:
+		return Vector2.ZERO
+	return move_input.normalized()
 
 
 
@@ -1006,8 +1078,8 @@ func _get_melee_targets(support_mods: Dictionary) -> Array[Node2D]:
 func _is_target_in_melee_range(target_node: Node2D, max_range: float) -> bool:
 	if target_node == null or not is_instance_valid(target_node):
 		return false
-	var clamped_range := maxf(max_range, 0.0)
-	return global_position.distance_squared_to(target_node.global_position) <= clamped_range * clamped_range
+	var effective_range: float = _get_melee_target_reach_distance(target_node, max_range)
+	return global_position.distance_squared_to(target_node.global_position) <= effective_range * effective_range
 
 
 func _single_target_array(target_node: Node2D) -> Array[Node2D]:
@@ -1057,10 +1129,11 @@ func _apply_on_hit_effects(
 
 func _get_enemies_in_circle(center: Vector2, radius: float) -> Array[Node2D]:
 	var result: Array[Node2D] = []
-	var radius_sq := radius * radius
 
 	for enemy_node in _get_alive_enemies():
-		if enemy_node.global_position.distance_squared_to(center) <= radius_sq:
+		var enemy_radius: float = _get_body_radius(enemy_node)
+		var effective_radius: float = radius + enemy_radius
+		if enemy_node.global_position.distance_squared_to(center) <= effective_radius * effective_radius:
 			result.append(enemy_node)
 
 	return result
@@ -1073,20 +1146,54 @@ func _get_enemies_in_cone(
 	angle_deg: float
 ) -> Array[Node2D]:
 	var result: Array[Node2D] = []
-	var radius_sq := radius * radius
 	var dir := forward.normalized()
 	var min_dot := cos(deg_to_rad(angle_deg * 0.5))
 
 	for enemy_node in _get_alive_enemies():
 		var to_enemy := enemy_node.global_position - center
-		if to_enemy.length_squared() > radius_sq:
+		var enemy_radius: float = _get_body_radius(enemy_node)
+		var effective_radius: float = radius + enemy_radius
+		var dist_sq: float = to_enemy.length_squared()
+		if dist_sq > effective_radius * effective_radius:
 			continue
 
-		var dot := dir.dot(to_enemy.normalized())
-		if dot >= min_dot:
+		var dist: float = sqrt(dist_sq)
+		if dist <= enemy_radius:
+			result.append(enemy_node)
+			continue
+
+		var ratio: float = clampf(enemy_radius / dist, 0.0, 0.95)
+		var angle_slack: float = asin(ratio)
+		var dot_threshold: float = cos(deg_to_rad(angle_deg * 0.5) + angle_slack)
+		var dot: float = dir.dot(to_enemy / dist)
+		if dot >= minf(min_dot, dot_threshold):
 			result.append(enemy_node)
 
 	return result
+
+
+func _resolve_melee_range(max_range: float) -> float:
+	if max_range > 0.0:
+		return max_range
+	return maxf(get_attack_range(), 0.0)
+
+
+func _get_melee_target_reach_distance(target_node: Node2D, max_range: float) -> float:
+	var resolved_range: float = maxf(max_range, 0.0)
+	if target_node == null or not is_instance_valid(target_node):
+		return resolved_range
+	return resolved_range + _get_body_radius(target_node)
+
+
+func _get_body_radius(node: Node) -> float:
+	if node == null:
+		return 10.0
+	var shape_node: Node = node.get_node_or_null("CollisionShape2D")
+	if shape_node is CollisionShape2D:
+		var collision_node: CollisionShape2D = shape_node as CollisionShape2D
+		if collision_node.shape is CircleShape2D:
+			return (collision_node.shape as CircleShape2D).radius
+	return 10.0
 
 
 func on_projectile_hit(

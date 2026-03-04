@@ -10,6 +10,29 @@ This format is based on Keep a Changelog and uses simple sections:
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-03-04
+
+### Added
+- Auto-move mode controls for combat:
+  - `V` hotkey toggle
+  - HUD auto-move toggle button
+  - saved auto-move preference between sessions
+- Manual movement override during runs with `WASD` / arrow-key support while keeping auto-attack enabled.
+
+### Changed
+- Player movement flow now supports hybrid control:
+  - manual input takes priority when pressed
+  - auto-move resumes when input is released and the mode is enabled
+- Melee engage and hit validation now align more closely with actual combat spacing by considering target body size and attack shape reach.
+- Melee auto-move range now respects support-gem area scaling for melee AOE skills instead of using only the base gem range.
+- Enemy projectile attacks now use fixed, dodgeable trajectories instead of homing during flight.
+- Lobby language controls were moved to the top-right area of the main panel instead of the build-button row.
+
+### Fixed
+- Fixed locale refresh gaps where tutorial overlay text/buttons could stay in the previous language until the next interaction.
+- Fixed lobby locale refresh so beacon card text, beacon preview text, and the start/activate-beacon button update immediately after switching language.
+- Fixed extraction-window prompt localization so the active countdown prompt no longer falls back to a hardcoded English string during runtime updates.
+
 ## [2.7.0] - 2026-03-04
 
 ### Added

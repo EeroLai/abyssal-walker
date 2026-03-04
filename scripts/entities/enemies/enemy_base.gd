@@ -339,7 +339,7 @@ func _on_attack_timer_timeout() -> void:
 		return
 
 	if _should_fire_projectile():
-		_launch_projectile_attack(damage_result, _elite_barrage_projectiles, _elite_barrage_spread_deg, _elite_barrage_projectiles <= 1)
+		_launch_projectile_attack(damage_result, _elite_barrage_projectiles, _elite_barrage_spread_deg, false)
 		return
 
 	if target.has_method("take_damage"):
@@ -376,7 +376,7 @@ func _launch_projectile_attack(
 	damage_result: DamageCalculator.DamageResult,
 	projectile_count: int = 1,
 	spread_deg: float = 0.0,
-	tracking_enabled: bool = true
+	tracking_enabled: bool = false
 ) -> void:
 	if target == null or not is_instance_valid(target):
 		return

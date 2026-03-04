@@ -20,6 +20,9 @@ enum OperationType {
 
 const DEFAULT_OPERATION_LIVES: int = 3
 const DEFAULT_OPERATION_MAX_DEPTH: int = 25
+const SETTINGS_PATH := "user://settings.cfg"
+const SETTINGS_SECTION_GAMEPLAY := "gameplay"
+const SETTINGS_KEY_AUTO_MOVE := "auto_move_enabled"
 const BEACON_DROP_SERVICE := preload("res://scripts/core/run/beacon_drop_service.gd")
 const LOOT_FILTER_SERVICE := preload("res://scripts/core/run/loot_filter_service.gd")
 const OPERATION_INVENTORY_SERVICE := preload("res://scripts/core/run/operation_inventory_service.gd")
@@ -66,6 +69,7 @@ var _query_service = RUN_QUERY_SERVICE.new(
 	_telemetry_service,
 	_loot_filter_service
 )
+var _auto_move_enabled: bool = true
 
 const LOOT_CATEGORY_EQUIPMENT := "equipment"
 const LOOT_CATEGORY_SKILL_GEM := "skill_gem"
@@ -75,6 +79,7 @@ const LOOT_CATEGORY_MODULE := "module"
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	_load_settings()
 	_connect_signals()
 	_ensure_starter_stash()
 
@@ -219,6 +224,17 @@ func get_lives_left() -> int:
 	return _query_service.get_lives_left()
 
 
+func is_auto_move_enabled() -> bool:
+	return _auto_move_enabled
+
+
+func set_auto_move_enabled(enabled: bool) -> void:
+	if _auto_move_enabled == enabled:
+		return
+	_auto_move_enabled = enabled
+	_save_auto_move_setting()
+
+
 func get_danger() -> int:
 	return _query_service.get_danger()
 
@@ -258,6 +274,21 @@ func get_operation_summary() -> Dictionary:
 
 func _emit_operation_session_changed() -> void:
 	EventBus.operation_session_changed.emit(get_operation_summary())
+
+
+func _load_settings() -> void:
+	var config := ConfigFile.new()
+	var error: Error = config.load(SETTINGS_PATH)
+	if error != OK:
+		return
+	_auto_move_enabled = bool(config.get_value(SETTINGS_SECTION_GAMEPLAY, SETTINGS_KEY_AUTO_MOVE, true))
+
+
+func _save_auto_move_setting() -> void:
+	var config := ConfigFile.new()
+	config.load(SETTINGS_PATH)
+	config.set_value(SETTINGS_SECTION_GAMEPLAY, SETTINGS_KEY_AUTO_MOVE, _auto_move_enabled)
+	config.save(SETTINGS_PATH)
 
 
 func _ensure_starter_stash() -> void:
