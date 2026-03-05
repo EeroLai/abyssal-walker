@@ -10,6 +10,17 @@ This format is based on Keep a Changelog and uses simple sections:
 
 ## [Unreleased]
 
+## [2.9.0] - 2026-03-05
+
+### Added
+- Dedicated player component services for build, combat, and runtime responsibilities, including movement/state runtime services and attack execution/visual services.
+- Structured player component folders by responsibility under `scripts/entities/player/components`.
+
+### Changed
+- Refactored `player.gd` into a thinner orchestration script that delegates inventory/material/gem/module, movement/runtime, and combat flows to focused services.
+- Normalized player component directory depth and naming across build/combat/runtime domains.
+- Shortened player component filenames by removing redundant `player_` prefixes while keeping `_service.gd` suffixes for discoverability.
+
 ## [2.8.0] - 2026-03-04
 
 ### Added

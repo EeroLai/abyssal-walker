@@ -8,6 +8,20 @@ signal auto_move_changed(enabled: bool)
 const PROJECTILE_SCENE := preload("res://scenes/entities/projectile.tscn")
 const MELEE_EFFECT_SCENE := preload("res://scenes/effects/melee_effect.tscn")
 const ARROW_RAIN_EFFECT_SCENE := preload("res://scenes/effects/arrow_rain_effect.tscn")
+const PLAYER_BUILD_QUERY_SERVICE := preload("res://scripts/entities/player/components/build/query/build_query_service.gd")
+const PLAYER_RUNTIME_BRIDGE := preload("res://scripts/entities/player/components/runtime/bridge/runtime_bridge.gd")
+const PLAYER_MOVEMENT_SERVICE := preload("res://scripts/entities/player/components/runtime/movement/movement_service.gd")
+const PLAYER_RUNTIME_STATE_SERVICE := preload("res://scripts/entities/player/components/runtime/state/runtime_state_service.gd")
+const PLAYER_HEALTH_SERVICE := preload("res://scripts/entities/player/components/combat/health/health_service.gd")
+const PLAYER_STATUS_SERVICE := preload("res://scripts/entities/player/components/combat/status/status_service.gd")
+const PLAYER_ATTACK_FLOW_SERVICE := preload("res://scripts/entities/player/components/combat/attack/attack_flow_service.gd")
+const PLAYER_ATTACK_TARGETING_SERVICE := preload("res://scripts/entities/player/components/combat/attack/attack_targeting_service.gd")
+const PLAYER_ATTACK_EXECUTION_SERVICE := preload("res://scripts/entities/player/components/combat/attack/execution/attack_execution_service.gd")
+const PLAYER_EQUIPMENT_INVENTORY_SERVICE := preload("res://scripts/entities/player/components/build/inventory/equipment_inventory_service.gd")
+const PLAYER_MATERIAL_SERVICE := preload("res://scripts/entities/player/components/build/materials/material_service.gd")
+const PLAYER_GEM_INVENTORY_SERVICE := preload("res://scripts/entities/player/components/build/gems/gem_inventory_service.gd")
+const PLAYER_MODULE_SERVICE := preload("res://scripts/entities/player/components/build/modules/module_service.gd")
+const PLAYER_ATTACK_VISUAL_SERVICE := preload("res://scripts/entities/player/components/combat/attack/visual/attack_visual_service.gd")
 const SHADOW_STRIKE_OFFSET := 28.0
 const STAB_FINISHER_MULTIPLIER := 1.6
 const ARC_CHAIN_SEARCH_RADIUS := 240.0
@@ -59,6 +73,20 @@ var _direct_hit_grace_remaining: float = 0.0
 var ai: PlayerAI
 var current_target: Node2D = null
 var auto_move_enabled: bool = true
+var _build_query_service = PLAYER_BUILD_QUERY_SERVICE.new()
+var _runtime_bridge = PLAYER_RUNTIME_BRIDGE.new()
+var _movement_service = PLAYER_MOVEMENT_SERVICE.new()
+var _runtime_state_service = PLAYER_RUNTIME_STATE_SERVICE.new()
+var _health_service = PLAYER_HEALTH_SERVICE.new()
+var _status_service = PLAYER_STATUS_SERVICE.new()
+var _attack_flow_service = PLAYER_ATTACK_FLOW_SERVICE.new()
+var _attack_targeting_service = PLAYER_ATTACK_TARGETING_SERVICE.new()
+var _attack_execution_service = PLAYER_ATTACK_EXECUTION_SERVICE.new()
+var _equipment_inventory_service = PLAYER_EQUIPMENT_INVENTORY_SERVICE.new()
+var _material_service = PLAYER_MATERIAL_SERVICE.new()
+var _gem_inventory_service = PLAYER_GEM_INVENTORY_SERVICE.new()
+var _module_service = PLAYER_MODULE_SERVICE.new()
+var _attack_visual_service = PLAYER_ATTACK_VISUAL_SERVICE.new()
 
 
 func _ready() -> void:
@@ -103,698 +131,325 @@ func _setup_ai() -> void:
 
 
 func _connect_signals() -> void:
-	if pickup_area:
-		var pickup_handler := Callable(self, "_on_pickup_area_entered")
-		if not pickup_area.area_entered.is_connected(pickup_handler):
-			pickup_area.area_entered.connect(pickup_handler)
-
-	if attack_timer:
-		var attack_handler := Callable(self, "_on_attack_timer_timeout")
-		if not attack_timer.timeout.is_connected(attack_handler):
-			attack_timer.timeout.connect(attack_handler)
+	_runtime_state_service.connect_signals(self)
 
 
 func _physics_process(delta: float) -> void:
-	if is_dead:
-		return
-	if _direct_hit_grace_remaining > 0.0:
-		_direct_hit_grace_remaining = maxf(0.0, _direct_hit_grace_remaining - delta)
-
-	var life_regen := stats.get_stat(StatTypes.Stat.LIFE_REGEN)
-	if life_regen > 0.0:
-		var max_hp := stats.get_stat(StatTypes.Stat.HP)
-		if current_hp < max_hp:
-			current_hp = minf(current_hp + life_regen * delta, max_hp)
-			_emit_health_changed()
-
-	if status_controller and status_controller.is_frozen():
-		velocity = Vector2.ZERO
-		move_and_slide()
-		_apply_virtual_walls()
-		return
-
-	var manual_move_input: Vector2 = _get_manual_move_input()
-	if manual_move_input != Vector2.ZERO:
-		velocity = manual_move_input * get_move_speed()
-	elif auto_move_enabled and ai:
-		velocity = ai.get_movement_velocity()
-	else:
-		velocity = Vector2.ZERO
-
-	move_and_slide()
-	_apply_virtual_walls()
-
-	if velocity.x != 0:
-		sprite.flip_h = velocity.x < 0
+	_movement_service.physics_process(self, delta)
 
 
 func _apply_virtual_walls() -> void:
-	if get_viewport().get_camera_2d() != null:
-		return
-	var view_size := get_viewport_rect().size
-	global_position.x = clampf(global_position.x, virtual_wall_margin, view_size.x - virtual_wall_margin)
-	global_position.y = clampf(global_position.y, virtual_wall_margin, view_size.y - virtual_wall_margin)
+	_movement_service.apply_virtual_walls(self)
 
 
 func get_move_speed() -> float:
-	return stats.get_stat(StatTypes.Stat.MOVE_SPEED)
+	return _movement_service.get_move_speed(self)
 
 
 func get_attack_speed() -> float:
-	var atk_speed := stats.get_stat(StatTypes.Stat.ATK_SPEED)
-	if gem_link and gem_link.skill_gem:
-		atk_speed *= gem_link.skill_gem.get_attack_speed_multiplier()
-	return atk_speed
+	return _movement_service.get_attack_speed(self)
 
 
 func get_attack_range() -> float:
-	if gem_link.skill_gem:
-		return gem_link.skill_gem.get_effective_range()
-	return 50.0
+	return _movement_service.get_attack_range(self)
 
 
 func get_auto_move_attack_range() -> float:
-	var base_range: float = get_attack_range()
-	if gem_link == null or gem_link.skill_gem == null:
-		return base_range
-
-	var skill: SkillGem = gem_link.skill_gem
-	if not skill.has_tag(StatTypes.SkillTag.MELEE):
-		return base_range
-	if not skill.has_tag(StatTypes.SkillTag.AOE):
-		return base_range
-
-	var support_mods: Dictionary = gem_link.get_combined_modifiers()
-	var area_multiplier: float = maxf(float(support_mods.get("area_multiplier", 1.0)), 0.1)
-	return base_range * area_multiplier
+	return _movement_service.get_auto_move_attack_range(self)
 
 
 func get_melee_attack_entry_distance(target_node: Node2D, max_range: float = -1.0) -> float:
-	var resolved_range: float = _resolve_melee_range(max_range)
-	var reach_distance: float = _get_melee_target_reach_distance(target_node, resolved_range)
-	var entry_buffer: float = clampf(resolved_range * 0.12, 3.0, 8.0)
-	return maxf(18.0, reach_distance - entry_buffer)
+	return _movement_service.get_melee_attack_entry_distance(self, target_node, max_range)
 
 
 func get_melee_attack_hold_distance(target_node: Node2D, max_range: float = -1.0) -> float:
-	var resolved_range: float = _resolve_melee_range(max_range)
-	var reach_distance: float = _get_melee_target_reach_distance(target_node, resolved_range)
-	var hold_buffer: float = clampf(resolved_range * 0.18, 6.0, 12.0)
-	return maxf(16.0, reach_distance - hold_buffer)
+	return _movement_service.get_melee_attack_hold_distance(self, target_node, max_range)
 
 
 func is_auto_move_enabled() -> bool:
-	return auto_move_enabled
+	return _movement_service.is_auto_move_enabled(self)
 
 
 func set_auto_move_enabled(enabled: bool) -> void:
-	if auto_move_enabled == enabled:
-		return
-	auto_move_enabled = enabled
-	auto_move_changed.emit(auto_move_enabled)
+	_movement_service.set_auto_move_enabled(self, enabled)
 
 
 func toggle_auto_move_enabled() -> bool:
-	set_auto_move_enabled(not auto_move_enabled)
-	return auto_move_enabled
+	return _movement_service.toggle_auto_move_enabled(self)
 
 
 func _get_manual_move_input() -> Vector2:
-	var horizontal: float = 0.0
-	var vertical: float = 0.0
-
-	if Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT):
-		horizontal -= 1.0
-	if Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT):
-		horizontal += 1.0
-	if Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP):
-		vertical -= 1.0
-	if Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN):
-		vertical += 1.0
-
-	var move_input: Vector2 = Vector2(horizontal, vertical)
-	if move_input == Vector2.ZERO:
-		return Vector2.ZERO
-	return move_input.normalized()
-
-
+	return _movement_service.get_manual_move_input()
 
 func equip(item: EquipmentData) -> EquipmentData:
-	var slot := _resolve_equip_slot(item)
-	item.slot = slot
-	var old_item: EquipmentData = null
-
-	if equipment.has(slot):
-		old_item = equipment[slot]
-		old_item.remove_from_stats(stats)
-
-	equipment[slot] = item
-	item.apply_to_stats(stats)
-
-	_emit_event_bus("equipment_changed", [slot, old_item, item])
-	return old_item
+	return _equipment_inventory_service.equip(self, item)
 
 
 func _resolve_equip_slot(item: EquipmentData) -> StatTypes.EquipmentSlot:
-	if item == null:
-		return StatTypes.EquipmentSlot.MAIN_HAND
-	var slot := item.slot
-	if slot != StatTypes.EquipmentSlot.RING_1 and slot != StatTypes.EquipmentSlot.RING_2:
-		return slot
-	var ring1_empty := get_equipped(StatTypes.EquipmentSlot.RING_1) == null
-	var ring2_empty := get_equipped(StatTypes.EquipmentSlot.RING_2) == null
-	if ring1_empty:
-		return StatTypes.EquipmentSlot.RING_1
-	if ring2_empty:
-		return StatTypes.EquipmentSlot.RING_2
-	return StatTypes.EquipmentSlot.RING_1
+	return _equipment_inventory_service.resolve_equip_slot(self, item)
 
 
 func unequip(slot: StatTypes.EquipmentSlot) -> EquipmentData:
-	if not equipment.has(slot):
-		return null
-
-	var item: EquipmentData = equipment[slot]
-	item.remove_from_stats(stats)
-	equipment.erase(slot)
-
-	_emit_event_bus("equipment_unequipped", [slot, item])
-	return item
+	return _equipment_inventory_service.unequip(self, slot)
 
 
 func get_equipped(slot: StatTypes.EquipmentSlot) -> EquipmentData:
-	return equipment.get(slot)
+	return _equipment_inventory_service.get_equipped(self, slot)
 
 
 func get_weapon_type() -> StatTypes.WeaponType:
-	var weapon := get_equipped(StatTypes.EquipmentSlot.MAIN_HAND)
-	if weapon:
-		return weapon.weapon_type
-	return StatTypes.WeaponType.SWORD
-
+	return _equipment_inventory_service.get_weapon_type(self)
 
 
 func add_to_inventory(item: EquipmentData) -> bool:
-	if inventory.size() >= MAX_INVENTORY_SIZE:
-		return false
-	inventory.append(item)
-	return true
+	return _equipment_inventory_service.add_to_inventory(self, item)
 
 
 func remove_from_inventory(index: int) -> EquipmentData:
-	if index < 0 or index >= inventory.size():
-		return null
-	var item: EquipmentData = inventory[index]
-	inventory.remove_at(index)
-	return item
+	return _equipment_inventory_service.remove_from_inventory(self, index)
 
 
 func get_inventory_item(index: int) -> EquipmentData:
-	if index < 0 or index >= inventory.size():
-		return null
-	return inventory[index]
+	return _equipment_inventory_service.get_inventory_item(self, index)
 
 
 func get_inventory_size() -> int:
-	return inventory.size()
+	return _equipment_inventory_service.get_inventory_size(self)
 
 
 func equip_from_inventory(index: int) -> void:
-	var item := remove_from_inventory(index)
-	if item == null:
-		return
-
-	var old_item := equip(item)
-	if old_item:
-		add_to_inventory(old_item)
-
+	_equipment_inventory_service.equip_from_inventory(self, index)
 
 
 func add_material(id: String, amount: int = 1) -> void:
-	if amount <= 0:
-		return
-	var current: int = int(materials.get(id, 0))
-	var next_count: int = current + amount
-	materials[id] = next_count
-	_set_stash_material_count(id, next_count)
+	_material_service.add_material(self, id, amount)
 
 
 func consume_material(id: String, amount: int = 1) -> bool:
-	if amount <= 0:
-		return false
-	var current: int = int(materials.get(id, 0))
-	if current < amount:
-		return false
-	var next_count: int = current - amount
-	materials[id] = next_count
-	_set_stash_material_count(id, next_count)
-	return true
+	return _material_service.consume_material(self, id, amount)
 
 
 func get_material_count(id: String) -> int:
-	return int(materials.get(id, 0))
+	return _material_service.get_material_count(self, id)
 
 
 func get_total_material_count() -> int:
-	var total: int = 0
-	for material_id in materials.keys():
-		total += int(materials.get(material_id, 0))
-	return total
+	return _material_service.get_total_material_count(self)
 
 
 func sync_materials(material_snapshot: Dictionary) -> void:
-	materials.clear()
-	for material_id in material_snapshot.keys():
-		var count: int = int(material_snapshot.get(material_id, 0))
-		if count > 0:
-			materials[str(material_id)] = count
-
+	_material_service.sync_materials(self, material_snapshot)
 
 
 func add_skill_gem_to_inventory(gem: SkillGem) -> bool:
-	if gem == null:
-		return false
-	return _store_in_first_free_slot(skill_gem_inventory, MAX_SKILL_GEM_INVENTORY, gem)
+	return _gem_inventory_service.add_skill_gem_to_inventory(self, gem)
 
 
 func add_support_gem_to_inventory(gem: SupportGem) -> bool:
-	if gem == null:
-		return false
-	return _store_in_first_free_slot(support_gem_inventory, MAX_SUPPORT_GEM_INVENTORY, gem)
+	return _gem_inventory_service.add_support_gem_to_inventory(self, gem)
 
 
 func remove_skill_gem_from_inventory(index: int) -> SkillGem:
-	return _remove_slot_item(skill_gem_inventory, index, true) as SkillGem
+	return _gem_inventory_service.remove_skill_gem_from_inventory(self, index)
 
 
 func remove_support_gem_from_inventory(index: int) -> SupportGem:
-	return _remove_slot_item(support_gem_inventory, index, true) as SupportGem
+	return _gem_inventory_service.remove_support_gem_from_inventory(self, index)
 
 
 func get_skill_gem_in_inventory(index: int) -> SkillGem:
-	return _get_slot_item(skill_gem_inventory, index) as SkillGem
+	return _gem_inventory_service.get_skill_gem_in_inventory(self, index)
 
 
 func get_support_gem_in_inventory(index: int) -> SupportGem:
-	return _get_slot_item(support_gem_inventory, index) as SupportGem
+	return _gem_inventory_service.get_support_gem_in_inventory(self, index)
 
 
 func equip_skill_from_inventory(index: int) -> bool:
-	if index < 0 or index >= MAX_SKILL_GEM_INVENTORY:
-		return false
-	var gem := get_skill_gem_in_inventory(index)
-	if gem == null:
-		return false
-
-	var old := gem_link.skill_gem
-	if old:
-		_set_skill_gem_in_inventory(index, old)
-	else:
-		_set_skill_gem_in_inventory(index, null)
-		_compact_skill_gem_inventory()
-
-	gem_link.set_skill_gem(gem)
-	_emit_event_bus("skill_gem_changed", [old, gem])
-	return true
+	return _gem_inventory_service.equip_skill_from_inventory(self, index)
 
 
 func equip_skill_gem_direct(gem: SkillGem) -> SkillGem:
-	if gem == null or gem_link == null:
-		return null
-	var old := gem_link.skill_gem
-	gem_link.set_skill_gem(gem)
-	_emit_event_bus("skill_gem_changed", [old, gem])
-	return old
+	return _gem_inventory_service.equip_skill_gem_direct(self, gem)
 
 
 func unequip_skill_to_inventory() -> bool:
-	if gem_link.skill_gem == null:
-		return false
-	var old := gem_link.skill_gem
-	if not _store_skill_gem_without_merge(old):
-		return false
-	gem_link.set_skill_gem(null)
-	_emit_event_bus("skill_gem_changed", [old, null])
-	return true
+	return _gem_inventory_service.unequip_skill_to_inventory(self)
 
 
 func equip_support_from_inventory(index: int) -> bool:
-	if index < 0 or index >= MAX_SUPPORT_GEM_INVENTORY:
-		return false
-	var gem := get_support_gem_in_inventory(index)
-	if gem == null:
-		return false
-	if not gem_link.add_support_gem(gem):
-		return false
-	var slot_index := gem_link.support_gems.find(gem)
-	_set_support_gem_in_inventory(index, null)
-	_compact_support_gem_inventory()
-	if slot_index >= 0:
-		_emit_event_bus("support_gem_changed", [slot_index, null, gem])
-	return true
+	return _gem_inventory_service.equip_support_from_inventory(self, index)
 
 
 func equip_support_gem_direct(gem: SupportGem) -> int:
-	if gem == null or gem_link == null:
-		return -1
-	if not gem_link.add_support_gem(gem):
-		return -1
-	var slot_index := gem_link.support_gems.find(gem)
-	if slot_index >= 0:
-		_emit_event_bus("support_gem_changed", [slot_index, null, gem])
-	return slot_index
+	return _gem_inventory_service.equip_support_gem_direct(self, gem)
 
 
 func unequip_support_to_inventory(index: int) -> bool:
-	var gem := gem_link.remove_support_gem(index)
-	if gem == null:
-		return false
-	if not _store_support_gem_without_merge(gem):
-		gem_link.set_support_gem(index, gem)
-		return false
-	_emit_event_bus("support_gem_changed", [index, gem, null])
-	return true
+	return _gem_inventory_service.unequip_support_to_inventory(self, index)
 
 
 func set_skill_gem_in_inventory(index: int, gem: SkillGem) -> bool:
-	if index < 0 or index >= MAX_SKILL_GEM_INVENTORY:
-		return false
-	_set_skill_gem_in_inventory(index, gem)
-	return true
+	return _gem_inventory_service.set_skill_gem_in_inventory(self, index, gem)
 
 
 func set_support_gem_in_inventory(index: int, gem: SupportGem) -> bool:
-	if index < 0 or index >= MAX_SUPPORT_GEM_INVENTORY:
-		return false
-	_set_support_gem_in_inventory(index, gem)
-	return true
+	return _gem_inventory_service.set_support_gem_in_inventory(self, index, gem)
 
 
 func swap_skill_gem_inventory(index_a: int, index_b: int) -> void:
-	_swap_slots(skill_gem_inventory, index_a, index_b)
+	_gem_inventory_service.swap_skill_gem_inventory(self, index_a, index_b)
 
 
 func swap_support_gem_inventory(index_a: int, index_b: int) -> void:
-	_swap_slots(support_gem_inventory, index_a, index_b)
+	_gem_inventory_service.swap_support_gem_inventory(self, index_a, index_b)
 
 
 func swap_skill_with_inventory(index: int) -> bool:
-	if gem_link.skill_gem == null:
-		return false
-	if index < 0 or index >= MAX_SKILL_GEM_INVENTORY:
-		return false
-	_ensure_skill_gem_size(index)
-	var old_equipped: SkillGem = gem_link.skill_gem
-	var temp: SkillGem = skill_gem_inventory[index]
-	skill_gem_inventory[index] = old_equipped
-	gem_link.set_skill_gem(temp)
-	_emit_event_bus("skill_gem_changed", [old_equipped, temp])
-	return true
+	return _gem_inventory_service.swap_skill_with_inventory(self, index)
 
 
 func swap_support_with_inventory(slot_index: int, inv_index: int) -> bool:
-	if slot_index < 0 or slot_index >= Constants.MAX_SUPPORT_GEMS:
-		return false
-	if inv_index < 0 or inv_index >= MAX_SUPPORT_GEM_INVENTORY:
-		return false
-	_ensure_support_gem_size(inv_index)
-
-	var current_slot: SupportGem = null
-	if slot_index < gem_link.support_gems.size():
-		current_slot = gem_link.support_gems[slot_index] as SupportGem
-	var inv_gem: SupportGem = support_gem_inventory[inv_index]
-
-	if inv_gem != null and not gem_link.set_support_gem(slot_index, inv_gem):
-		return false
-
-	support_gem_inventory[inv_index] = current_slot
-	if inv_gem == null:
-		gem_link.set_support_gem(slot_index, null)
-	if current_slot != inv_gem:
-		_emit_event_bus("support_gem_changed", [slot_index, current_slot, inv_gem])
-	return true
+	return _gem_inventory_service.swap_support_with_inventory(self, slot_index, inv_index)
 
 
 func _set_skill_gem_in_inventory(index: int, gem: SkillGem) -> void:
-	_set_slot_item(skill_gem_inventory, index, gem)
+	_gem_inventory_service._set_skill_gem_in_inventory(self, index, gem)
 
 
 func _set_support_gem_in_inventory(index: int, gem: SupportGem) -> void:
-	_set_slot_item(support_gem_inventory, index, gem)
+	_gem_inventory_service._set_support_gem_in_inventory(self, index, gem)
 
 
 func _ensure_skill_gem_size(index: int) -> void:
-	_ensure_slot_size(skill_gem_inventory, index)
+	_gem_inventory_service._ensure_skill_gem_size(self, index)
 
 
 func _ensure_support_gem_size(index: int) -> void:
-	_ensure_slot_size(support_gem_inventory, index)
+	_gem_inventory_service._ensure_support_gem_size(self, index)
 
 
 func _compact_skill_gem_inventory() -> void:
-	_compact_slots(skill_gem_inventory)
+	_gem_inventory_service._compact_skill_gem_inventory(self)
 
 
 func _compact_support_gem_inventory() -> void:
-	_compact_slots(support_gem_inventory)
+	_gem_inventory_service._compact_support_gem_inventory(self)
 
 
 func _store_skill_gem_without_merge(gem: SkillGem) -> bool:
-	return _store_in_first_free_slot(skill_gem_inventory, MAX_SKILL_GEM_INVENTORY, gem)
+	return _gem_inventory_service._store_skill_gem_without_merge(self, gem)
 
 
 func _store_support_gem_without_merge(gem: SupportGem) -> bool:
-	return _store_in_first_free_slot(support_gem_inventory, MAX_SUPPORT_GEM_INVENTORY, gem)
+	return _gem_inventory_service._store_support_gem_without_merge(self, gem)
 
 
 func _try_merge_skill_gem(incoming: SkillGem) -> bool:
-	if incoming.level >= Constants.MAX_GEM_LEVEL:
-		return false
-	if gem_link != null and gem_link.skill_gem != null and _can_merge_same_level_skill(gem_link.skill_gem, incoming):
-		_merge_skill_pair(gem_link.skill_gem)
-		return true
-	for gem in skill_gem_inventory:
-		if gem != null and _can_merge_same_level_skill(gem, incoming):
-			_merge_skill_pair(gem)
-			return true
-	return false
+	return _gem_inventory_service._try_merge_skill_gem(self, incoming)
 
 
 func _try_merge_support_gem(incoming: SupportGem) -> bool:
-	if incoming.level >= Constants.MAX_GEM_LEVEL:
-		return false
-	if gem_link != null:
-		for equipped in gem_link.support_gems:
-			if equipped != null and _can_merge_same_level_support(equipped, incoming):
-				_merge_support_pair(equipped)
-				return true
-	for gem in support_gem_inventory:
-		if gem != null and _can_merge_same_level_support(gem, incoming):
-			_merge_support_pair(gem)
-			return true
-	return false
+	return _gem_inventory_service._try_merge_support_gem(self, incoming)
 
 
 func _can_merge_same_level_skill(a: SkillGem, b: SkillGem) -> bool:
-	return _can_merge_same_level_gem(a, b)
+	return _gem_inventory_service._can_merge_same_level_skill(a, b)
 
 
 func _can_merge_same_level_support(a: SupportGem, b: SupportGem) -> bool:
-	return _can_merge_same_level_gem(a, b)
+	return _gem_inventory_service._can_merge_same_level_support(a, b)
 
 
 func _merge_skill_pair(target_gem: SkillGem) -> void:
-	_merge_gem_pair(target_gem)
+	_gem_inventory_service._merge_skill_pair(target_gem)
 
 
 func _merge_support_pair(target_gem: SupportGem) -> void:
-	_merge_gem_pair(target_gem)
+	_gem_inventory_service._merge_support_pair(target_gem)
 
 
 func _store_in_first_free_slot(storage: Array, max_count: int, item: Variant) -> bool:
-	if item == null:
-		return false
-	for i in range(max_count):
-		if i >= storage.size():
-			storage.append(item)
-			return true
-		if storage[i] == null:
-			storage[i] = item
-			return true
-	return false
+	return _gem_inventory_service._store_in_first_free_slot(storage, max_count, item)
 
 
 func _remove_slot_item(storage: Array, index: int, compact: bool = false) -> Variant:
-	if index < 0 or index >= storage.size():
-		return null
-	var item = storage[index]
-	storage[index] = null
-	if compact:
-		_compact_slots(storage)
-	return item
+	return _gem_inventory_service._remove_slot_item(storage, index, compact)
 
 
 func _get_slot_item(storage: Array, index: int) -> Variant:
-	if index < 0 or index >= storage.size():
-		return null
-	return storage[index]
+	return _gem_inventory_service._get_slot_item(storage, index)
 
 
 func _set_slot_item(storage: Array, index: int, item: Variant) -> void:
-	_ensure_slot_size(storage, index)
-	storage[index] = item
+	_gem_inventory_service._set_slot_item(storage, index, item)
 
 
 func _ensure_slot_size(storage: Array, index: int) -> void:
-	while storage.size() <= index:
-		storage.append(null)
+	_gem_inventory_service._ensure_slot_size(storage, index)
 
 
 func _compact_slots(storage: Array) -> void:
-	for i in range(storage.size() - 1, -1, -1):
-		if storage[i] == null:
-			storage.remove_at(i)
+	_gem_inventory_service._compact_slots(storage)
 
 
 func _swap_slots(storage: Array, index_a: int, index_b: int) -> void:
-	_ensure_slot_size(storage, index_a)
-	_ensure_slot_size(storage, index_b)
-	var temp = storage[index_a]
-	storage[index_a] = storage[index_b]
-	storage[index_b] = temp
+	_gem_inventory_service._swap_slots(storage, index_a, index_b)
 
 
 func _can_merge_same_level_gem(a: Resource, b: Resource) -> bool:
-	if a == null or b == null:
-		return false
-	return a.id == b.id and a.level == b.level and a.level < Constants.MAX_GEM_LEVEL
+	return _gem_inventory_service._can_merge_same_level_gem(a, b)
 
 
 func _merge_gem_pair(target_gem: Resource) -> void:
-	if target_gem == null:
-		return
-	target_gem.experience = 0.0
-
-
+	_gem_inventory_service._merge_gem_pair(target_gem)
 
 func start_auto_attack() -> void:
-	if attack_timer.is_stopped():
-		_perform_attack()
-		_restart_attack_timer()
-
+	_attack_flow_service.start_auto_attack(self)
 
 func stop_auto_attack() -> void:
-	attack_timer.stop()
-
+	_attack_flow_service.stop_auto_attack(self)
 
 func _restart_attack_timer() -> void:
-	var atk_speed := get_attack_speed()
-	var interval := 1.0 / maxf(atk_speed, 0.1)
-	attack_timer.wait_time = interval
-	attack_timer.start()
-
+	_attack_flow_service.restart_attack_timer(self)
 
 func _perform_attack() -> void:
-	if not gem_link.is_valid():
-		return
-
-	var skill: SkillGem = gem_link.skill_gem
-	if not _can_attack_with_skill(skill):
-		return
-
-	_try_shadow_strike_reposition()
-
-	var support_mods := gem_link.get_combined_modifiers()
-	var skill_mult := gem_link.get_final_damage_multiplier()
-	if _is_ranged_skill(skill):
-		_execute_ranged_attack(skill, skill_mult, support_mods)
-		return
-	_execute_melee_attack(skill, skill_mult, support_mods)
-
+	_attack_flow_service.perform_attack(self)
 
 func _can_attack_with_skill(skill: SkillGem) -> bool:
-	if skill == null:
-		return false
-	if not skill.can_use_with_weapon(get_weapon_type()):
-		return false
-	return _get_current_target_node2d() != null
-
+	return _attack_flow_service.can_attack_with_skill(self, skill)
 
 func _get_current_target_node2d() -> Node2D:
-	if current_target == null or not is_instance_valid(current_target):
-		return null
-	return current_target as Node2D
-
+	return _attack_flow_service.get_current_target_node2d(self)
 
 func _is_ranged_skill(skill: SkillGem) -> bool:
-	return skill.has_tag(StatTypes.SkillTag.RANGED) or skill.has_tag(StatTypes.SkillTag.PROJECTILE)
-
+	return _attack_flow_service.is_ranged_skill(skill)
 
 func _execute_ranged_attack(skill: SkillGem, skill_mult: float, support_mods: Dictionary) -> void:
-	if skill.id == "arrow_rain":
-		_apply_arrow_rain(skill_mult, support_mods)
-		return
-	var ranged_damage := DamageCalculator.calculate_attack_damage(stats, skill_mult, support_mods, skill)
-	if skill.id == "arc_lightning":
-		_cast_arc_lightning(ranged_damage, support_mods)
-		return
-	_launch_projectile(ranged_damage, support_mods)
+	_attack_execution_service.execute_ranged_attack(
+		self,
+		skill,
+		skill_mult,
+		support_mods,
+		PROJECTILE_SCENE,
+		ARC_UNUSED_CHAIN_MORE_PER_STACK
+	)
 
 
 func _execute_melee_attack(skill: SkillGem, skill_mult: float, support_mods: Dictionary) -> void:
-	if skill.hit_count > 1:
-		_apply_flurry_hit(skill_mult, support_mods)
-		return
-	var melee_damage := DamageCalculator.calculate_attack_damage(stats, skill_mult, support_mods, skill)
-	_apply_melee_hit(melee_damage, support_mods)
-
+	_attack_execution_service.execute_melee_attack(
+		self,
+		skill,
+		skill_mult,
+		support_mods,
+		STAB_FINISHER_MULTIPLIER
+	)
 
 func _try_shadow_strike_reposition() -> void:
-	if gem_link == null or gem_link.skill_gem == null:
-		return
-	if gem_link.skill_gem.id != "shadow_strike":
-		return
-	var target_node := _get_current_target_node2d()
-	if target_node == null:
-		return
-	var to_target := (target_node.global_position - global_position).normalized()
-	if to_target == Vector2.ZERO:
-		to_target = Vector2.RIGHT
-
-	var desired := target_node.global_position + to_target * SHADOW_STRIKE_OFFSET
-	if _can_teleport_to(desired, target_node):
-		global_position = desired
-		return
-
-	var angle_offsets := [20.0, -20.0, 40.0, -40.0, 60.0, -60.0]
-	for angle_deg in angle_offsets:
-		var dir := to_target.rotated(deg_to_rad(angle_deg))
-		var candidate := target_node.global_position + dir * SHADOW_STRIKE_OFFSET
-		if _can_teleport_to(candidate, target_node):
-			global_position = candidate
-			return
-
+	_attack_flow_service.try_shadow_strike_reposition(self, SHADOW_STRIKE_OFFSET)
 
 func _can_teleport_to(pos: Vector2, target_node: Node2D) -> bool:
-	var params := PhysicsPointQueryParameters2D.new()
-	params.position = pos
-	params.collide_with_areas = false
-	params.collide_with_bodies = true
-	params.collision_mask = collision_mask
-
-	var hits := get_world_2d().direct_space_state.intersect_point(params, 8)
-	for hit in hits:
-		var collider = hit.get("collider")
-		if collider == null:
-			continue
-		if collider == self or collider == target_node:
-			continue
-		if collider.has_method("is_dead"):
-			continue
-		return false
-
-	return true
-
+	return _attack_flow_service.can_teleport_to(self, pos, target_node)
 
 func _apply_melee_hit(
 	damage_result: DamageCalculator.DamageResult,
@@ -810,300 +465,62 @@ func _apply_melee_hit(
 
 
 func _apply_flurry_hit(skill_mult: float, support_mods: Dictionary) -> void:
-	var skill := gem_link.skill_gem
-	if skill == null:
-		return
-	var hit_count := maxi(1, skill.hit_count)
-	for i in range(hit_count):
-		var per_hit_mult := skill_mult
-		# Stab's second strike is a finisher to improve single-target burst identity.
-		if skill.id == "stab" and i == hit_count - 1:
-			per_hit_mult *= STAB_FINISHER_MULTIPLIER
-		var damage_result := DamageCalculator.calculate_attack_damage(stats, per_hit_mult, support_mods, skill)
-		_apply_melee_hit(damage_result, support_mods, i == 0)
+	_attack_execution_service.apply_flurry_hit(self, skill_mult, support_mods, STAB_FINISHER_MULTIPLIER)
 
 
 func _apply_arrow_rain(skill_mult: float, support_mods: Dictionary) -> void:
-	var target_node := _get_current_target_node2d()
-	if target_node == null:
-		return
-	var skill := gem_link.skill_gem
-	if skill == null:
-		return
-
-	var area_multiplier := maxf(float(support_mods.get("area_multiplier", 1.0)), 0.1)
-	var rain_radius := skill.get_effective_explosion_radius()
-	if rain_radius <= 0.0:
-		rain_radius = 80.0
-	rain_radius *= area_multiplier
-
-	var center := target_node.global_position
-	var arrow_count := maxi(1, skill.arrow_count)
-	_spawn_arrow_rain_effect(center, rain_radius, arrow_count)
-	var targets := _get_enemies_in_circle(center, rain_radius)
-	if targets.is_empty():
-		targets.append(target_node)
-
-	for i in range(arrow_count):
-		var target: Node2D = targets[randi() % targets.size()]
-		var damage_result := DamageCalculator.calculate_attack_damage(stats, skill_mult, support_mods, skill)
-		_apply_hit_to_target(target, damage_result, support_mods)
+	_attack_execution_service.apply_arrow_rain(self, skill_mult, support_mods)
 
 
 func _launch_projectile(
 	damage_result: DamageCalculator.DamageResult,
 	support_mods: Dictionary
 ) -> void:
-	var target_node := _get_current_target_node2d()
-	if target_node == null:
-		return
-	var skill := gem_link.skill_gem
-	if skill == null:
-		return
-
-	var projectile_count := maxi(1, int(round(support_mods.get("projectile_count", 0.0))) + 1)
-	var spread_deg := 14.0 + maxf(float(projectile_count - 1), 0.0) * 3.0
-	var base_angle := (target_node.global_position - global_position).angle()
-	var is_tracking := skill.has_tag(StatTypes.SkillTag.TRACKING)
-	var projectile_speed := skill.get_effective_projectile_speed()
-	var area_multiplier := maxf(float(support_mods.get("area_multiplier", 1.0)), 0.1)
-	var explosion_radius := skill.get_effective_explosion_radius() * area_multiplier
-	var pierce_count := maxi(0, skill.pierce_count + int(round(support_mods.get("pierce_count", 0.0))))
-	var chain_count := maxi(0, skill.chain_count + int(round(support_mods.get("chain_count", 0.0))))
-	var color: Color = StatTypes.ELEMENT_COLORS.get(
-		_get_primary_element(damage_result), Color.WHITE)
-
-	for i in range(projectile_count):
-		var projectile: Projectile = PROJECTILE_SCENE.instantiate()
-
-		var angle_offset := 0.0
-		if projectile_count > 1:
-			var t := float(i) / float(projectile_count - 1)
-			angle_offset = lerpf(-spread_deg * 0.5, spread_deg * 0.5, t)
-		var aim_direction := Vector2.from_angle(base_angle + deg_to_rad(angle_offset))
-		var side_dir := Vector2(-aim_direction.y, aim_direction.x)
-		var side_index := float(i) - (float(projectile_count - 1) * 0.5)
-		var side_spacing := 10.0 if is_tracking else 0.0
-		projectile.global_position = global_position + side_dir * side_index * side_spacing
-
-		projectile.setup(
-			self,
-			target_node,
-			damage_result,
-			support_mods,
-			is_tracking,
-			color,
-			aim_direction,
-			projectile_speed,
-			explosion_radius,
-			pierce_count,
-			chain_count
-		)
-		get_parent().add_child(projectile)
+	_attack_execution_service.launch_projectile(self, PROJECTILE_SCENE, damage_result, support_mods)
 
 
 func _cast_arc_lightning(
 	damage_result: DamageCalculator.DamageResult,
 	support_mods: Dictionary
 ) -> void:
-	var start_target := _get_current_target_node2d()
-	if start_target == null:
-		return
-	var skill := gem_link.skill_gem
-	if skill == null:
-		return
-
-	var max_chain := maxi(0, skill.chain_count + int(round(support_mods.get("chain_count", 0.0))))
-	var hit_targets: Dictionary = {}
-	var chain_targets: Array[Node2D] = []
-	var current_node := start_target
-	var hops := 0
-
-	while current_node != null and is_instance_valid(current_node):
-		var key := str(current_node.get_instance_id())
-		if hit_targets.has(key):
-			break
-		hit_targets[key] = true
-		chain_targets.append(current_node)
-		if hops >= max_chain:
-			break
-		var next_target := _find_arc_chain_target(current_node, hit_targets)
-		if next_target == null:
-			break
-		current_node = next_target
-		hops += 1
-
-	var used_chain := maxi(chain_targets.size() - 1, 0)
-	var unused_chain := maxi(max_chain - used_chain, 0)
-	var bonus_mult := 1.0 + float(unused_chain) * ARC_UNUSED_CHAIN_MORE_PER_STACK
-	var result_to_apply := _scale_damage_result(damage_result, bonus_mult) if unused_chain > 0 else damage_result
-
-	var from_pos := global_position
-	var color: Color = StatTypes.ELEMENT_COLORS.get(_get_primary_element(damage_result), Color.WHITE)
-	for target_node in chain_targets:
-		if target_node == null or not is_instance_valid(target_node):
-			continue
-		_spawn_arc_beam_effect(from_pos, target_node.global_position, color)
-		_apply_hit_to_target(target_node, result_to_apply, support_mods)
-		from_pos = target_node.global_position
-
+	_attack_execution_service.cast_arc_lightning(self, damage_result, support_mods, ARC_UNUSED_CHAIN_MORE_PER_STACK)
 
 func _find_arc_chain_target(from_target: Node2D, hit_targets: Dictionary) -> Node2D:
-	var best: Node2D = null
-	var best_dist_sq := INF
-	var max_dist_sq := ARC_CHAIN_SEARCH_RADIUS * ARC_CHAIN_SEARCH_RADIUS
-
-	for enemy_node in _get_alive_enemies():
-		if enemy_node == from_target:
-			continue
-		var key := str(enemy_node.get_instance_id())
-		if hit_targets.has(key):
-			continue
-		var dist_sq := enemy_node.global_position.distance_squared_to(from_target.global_position)
-		if dist_sq > max_dist_sq:
-			continue
-		if dist_sq < best_dist_sq:
-			best_dist_sq = dist_sq
-			best = enemy_node
-
-	return best
-
+	return _attack_targeting_service.find_arc_chain_target(self, from_target, hit_targets)
 
 func _spawn_arc_beam_effect(start_pos: Vector2, end_pos: Vector2, color: Color) -> void:
-	var beam := Line2D.new()
-	beam.width = 3.5
-	beam.default_color = color
-	beam.z_index = 50
-	beam.add_point(start_pos)
-	beam.add_point(end_pos)
-	get_parent().add_child(beam)
-
-	var tween := create_tween()
-	tween.tween_property(beam, "modulate:a", 0.0, 0.12)
-	tween.tween_callback(beam.queue_free)
+	_attack_execution_service.spawn_arc_beam_effect(self, start_pos, end_pos, color)
 
 
 func _scale_damage_result(
 	base: DamageCalculator.DamageResult,
 	multiplier: float
 ) -> DamageCalculator.DamageResult:
-	var scaled := DamageCalculator.DamageResult.new()
-	var m := maxf(multiplier, 0.0)
-	scaled.physical_damage = base.physical_damage * m
-	scaled.fire_damage = base.fire_damage * m
-	scaled.ice_damage = base.ice_damage * m
-	scaled.lightning_damage = base.lightning_damage * m
-	scaled.total_damage = (
-		scaled.physical_damage +
-		scaled.fire_damage +
-		scaled.ice_damage +
-		scaled.lightning_damage
-	)
-	scaled.is_crit = base.is_crit
-	scaled.crit_multiplier = base.crit_multiplier
-	return scaled
-
+	return _attack_execution_service.scale_damage_result(base, multiplier)
 
 func _spawn_melee_effect(
 	damage_result: DamageCalculator.DamageResult,
 	support_mods: Dictionary
 ) -> void:
-	var target_node := _get_current_target_node2d()
-	if target_node == null:
-		return
-	var effect: MeleeEffect = MELEE_EFFECT_SCENE.instantiate()
-	effect.global_position = global_position
-	var angle := (target_node.global_position - global_position).angle()
-	var area_multiplier := float(support_mods.get("area_multiplier", 1.0))
-	var skill := gem_link.skill_gem
-	var is_circle := skill != null and skill.id == "whirlwind"
-	var is_aoe_melee := skill != null and skill.has_tag(StatTypes.SkillTag.AOE)
-	var effect_range := get_attack_range()
-	var cone_angle_deg := 102.0
-	if is_aoe_melee:
-		effect_range *= maxf(area_multiplier, 0.1)
-	else:
-		cone_angle_deg = 42.0
-		if skill != null and (skill.id == "flurry" or skill.id == "shadow_strike"):
-			effect_range = minf(effect_range, 42.0)
-			cone_angle_deg = 30.0
-		elif skill != null and skill.id == "stab":
-			cone_angle_deg = 34.0
-	var color: Color = StatTypes.ELEMENT_COLORS.get(
-		_get_primary_element(damage_result), Color.WHITE)
-	effect.setup(effect_range, angle, color, is_circle, cone_angle_deg)
-	get_parent().add_child(effect)
-
+	_attack_visual_service.spawn_melee_effect(self, MELEE_EFFECT_SCENE, damage_result, support_mods)
 
 func _spawn_arrow_rain_effect(center: Vector2, radius: float, arrow_count: int) -> void:
-	var effect: ArrowRainEffect = ARROW_RAIN_EFFECT_SCENE.instantiate()
-	var color := Color(0.88, 0.95, 1.0, 1.0)
-	effect.setup(center, radius, arrow_count, color)
-	get_parent().add_child(effect)
-
+	_attack_visual_service.spawn_arrow_rain_effect(self, ARROW_RAIN_EFFECT_SCENE, center, radius, arrow_count)
 
 func _get_melee_targets(support_mods: Dictionary) -> Array[Node2D]:
-	var target_node := _get_current_target_node2d()
-	if target_node == null:
-		return []
-
-	if gem_link == null or gem_link.skill_gem == null:
-		if _is_target_in_melee_range(target_node, get_attack_range()):
-			return _single_target_array(target_node)
-		return []
-
-	var skill := gem_link.skill_gem
-	var area_multiplier := float(support_mods.get("area_multiplier", 1.0))
-	var radius := get_attack_range() * maxf(area_multiplier, 0.1)
-
-	if skill.id == "shadow_strike":
-		if _is_target_in_melee_range(target_node, get_attack_range()):
-			return _single_target_array(target_node)
-		return []
-
-	if not skill.has_tag(StatTypes.SkillTag.AOE):
-		if _is_target_in_melee_range(target_node, get_attack_range()):
-			return _single_target_array(target_node)
-		return []
-
-	if skill.id == "whirlwind":
-		return _get_enemies_in_circle(global_position, radius)
-
-	var forward := (target_node.global_position - global_position).normalized()
-	if forward == Vector2.ZERO:
-		forward = Vector2.RIGHT
-	return _get_enemies_in_cone(global_position, forward, radius, 120.0)
-
+	return _attack_targeting_service.get_melee_targets(self, support_mods)
 
 func _is_target_in_melee_range(target_node: Node2D, max_range: float) -> bool:
-	if target_node == null or not is_instance_valid(target_node):
-		return false
-	var effective_range: float = _get_melee_target_reach_distance(target_node, max_range)
-	return global_position.distance_squared_to(target_node.global_position) <= effective_range * effective_range
-
+	return _attack_targeting_service.is_target_in_melee_range(self, target_node, max_range)
 
 func _single_target_array(target_node: Node2D) -> Array[Node2D]:
-	var result: Array[Node2D] = []
-	if target_node != null and is_instance_valid(target_node):
-		result.append(target_node)
-	return result
-
+	return _attack_targeting_service.single_target_array(target_node)
 
 func _get_alive_enemies() -> Array[Node2D]:
-	var result: Array[Node2D] = []
-	for enemy in get_tree().get_nodes_in_group("enemies"):
-		if enemy is Node2D and _is_alive_enemy(enemy):
-			result.append(enemy as Node2D)
-	return result
-
+	return _attack_targeting_service.get_alive_enemies(self)
 
 func _is_alive_enemy(enemy: Node) -> bool:
-	if enemy == null or not is_instance_valid(enemy):
-		return false
-	if enemy.has_method("is_dead") and enemy.is_dead():
-		return false
-	return true
-
+	return _attack_targeting_service.is_alive_enemy(enemy)
 
 func _apply_hit_to_target(
 	target: Node,
@@ -1123,21 +540,10 @@ func _apply_on_hit_effects(
 	damage_result: DamageCalculator.DamageResult,
 	support_mods: Dictionary
 ) -> void:
-	_try_apply_status_on_hit(target, damage_result, support_mods)
-	_try_apply_knockback_on_hit(target, support_mods)
-
+	_status_service.apply_on_hit_effects(self, target, damage_result, support_mods)
 
 func _get_enemies_in_circle(center: Vector2, radius: float) -> Array[Node2D]:
-	var result: Array[Node2D] = []
-
-	for enemy_node in _get_alive_enemies():
-		var enemy_radius: float = _get_body_radius(enemy_node)
-		var effective_radius: float = radius + enemy_radius
-		if enemy_node.global_position.distance_squared_to(center) <= effective_radius * effective_radius:
-			result.append(enemy_node)
-
-	return result
-
+	return _attack_targeting_service.get_enemies_in_circle(self, center, radius)
 
 func _get_enemies_in_cone(
 	center: Vector2,
@@ -1145,56 +551,16 @@ func _get_enemies_in_cone(
 	radius: float,
 	angle_deg: float
 ) -> Array[Node2D]:
-	var result: Array[Node2D] = []
-	var dir := forward.normalized()
-	var min_dot := cos(deg_to_rad(angle_deg * 0.5))
-
-	for enemy_node in _get_alive_enemies():
-		var to_enemy := enemy_node.global_position - center
-		var enemy_radius: float = _get_body_radius(enemy_node)
-		var effective_radius: float = radius + enemy_radius
-		var dist_sq: float = to_enemy.length_squared()
-		if dist_sq > effective_radius * effective_radius:
-			continue
-
-		var dist: float = sqrt(dist_sq)
-		if dist <= enemy_radius:
-			result.append(enemy_node)
-			continue
-
-		var ratio: float = clampf(enemy_radius / dist, 0.0, 0.95)
-		var angle_slack: float = asin(ratio)
-		var dot_threshold: float = cos(deg_to_rad(angle_deg * 0.5) + angle_slack)
-		var dot: float = dir.dot(to_enemy / dist)
-		if dot >= minf(min_dot, dot_threshold):
-			result.append(enemy_node)
-
-	return result
-
+	return _attack_targeting_service.get_enemies_in_cone(self, center, forward, radius, angle_deg)
 
 func _resolve_melee_range(max_range: float) -> float:
-	if max_range > 0.0:
-		return max_range
-	return maxf(get_attack_range(), 0.0)
-
+	return _attack_targeting_service.resolve_melee_range(self, max_range)
 
 func _get_melee_target_reach_distance(target_node: Node2D, max_range: float) -> float:
-	var resolved_range: float = maxf(max_range, 0.0)
-	if target_node == null or not is_instance_valid(target_node):
-		return resolved_range
-	return resolved_range + _get_body_radius(target_node)
-
+	return _attack_targeting_service.get_melee_target_reach_distance(self, target_node, max_range)
 
 func _get_body_radius(node: Node) -> float:
-	if node == null:
-		return 10.0
-	var shape_node: Node = node.get_node_or_null("CollisionShape2D")
-	if shape_node is CollisionShape2D:
-		var collision_node: CollisionShape2D = shape_node as CollisionShape2D
-		if collision_node.shape is CircleShape2D:
-			return (collision_node.shape as CircleShape2D).radius
-	return 10.0
-
+	return _attack_targeting_service.get_body_radius(node)
 
 func on_projectile_hit(
 	target: Node,
@@ -1205,58 +571,24 @@ func on_projectile_hit(
 
 
 func _get_primary_element(result: DamageCalculator.DamageResult) -> StatTypes.Element:
-	var max_dmg := result.physical_damage
-	var element := StatTypes.Element.PHYSICAL
-	if result.fire_damage > max_dmg:
-		max_dmg = result.fire_damage
-		element = StatTypes.Element.FIRE
-	if result.ice_damage > max_dmg:
-		max_dmg = result.ice_damage
-		element = StatTypes.Element.ICE
-	if result.lightning_damage > max_dmg:
-		element = StatTypes.Element.LIGHTNING
-	return element
-
+	return _attack_visual_service.get_primary_element(result)
 
 func _on_attack_timer_timeout() -> void:
-	if current_target and is_instance_valid(current_target):
-		_perform_attack()
-	_restart_attack_timer()
+	_runtime_state_service.on_attack_timer_timeout(self)
 
 
 
 func take_damage(damage_result: DamageCalculator.DamageResult, attacker: Node) -> void:
-	if is_dead:
-		return
-
-	var final_damage := _calculate_final_received_damage(damage_result)
-	if final_damage <= 0.0:
-		return
-	if _direct_hit_grace_remaining > 0.0:
-		final_damage *= DIRECT_HIT_GRACE_MULTIPLIER
-	_apply_damage_to_health(final_damage)
-	_direct_hit_grace_remaining = DIRECT_HIT_GRACE_DURATION
-	_apply_life_steal_on_hit(final_damage)
-
-	if current_hp <= 0:
-		_die()
-
+	_health_service.take_damage(self, damage_result, attacker, DIRECT_HIT_GRACE_MULTIPLIER, DIRECT_HIT_GRACE_DURATION)
 
 func heal(amount: float) -> void:
-	var max_hp := stats.get_stat(StatTypes.Stat.HP)
-	current_hp = minf(current_hp + amount, max_hp)
-	_emit_health_changed()
-
+	_health_service.heal(self, amount)
 
 func restore_health_to_max() -> void:
-	current_hp = stats.get_stat(StatTypes.Stat.HP)
-	_emit_health_changed()
-
+	_health_service.restore_health_to_max(self)
 
 func clamp_health_to_max() -> void:
-	current_hp = minf(current_hp, stats.get_stat(StatTypes.Stat.HP))
-	_emit_health_changed()
-
+	_health_service.clamp_health_to_max(self)
 
 func _die() -> void:
 	is_dead = true
@@ -1273,24 +605,13 @@ func _emit_health_changed() -> void:
 
 
 func apply_status_damage(amount: float, element: StatTypes.Element) -> void:
-	if is_dead:
-		return
-
-	_apply_damage_to_health(amount)
-
-	if current_hp <= 0:
-		_die()
-
-# ===== Status And Signals =====
-
+	_health_service.apply_status_damage(self, amount, element)
 func _on_pickup_area_entered(area: Area2D) -> void:
-	if area.has_method("pickup"):
-		area.pickup(self)
+	_runtime_state_service.on_pickup_area_entered(self, area)
 
 
 func _on_stats_changed() -> void:
-	_clamp_health_after_stats_changed()
-	_update_pickup_area_radius()
+	_runtime_state_service.on_stats_changed(self)
 
 
 func _try_apply_status_on_hit(
@@ -1298,88 +619,29 @@ func _try_apply_status_on_hit(
 	damage_result: DamageCalculator.DamageResult,
 	support_mods: Dictionary
 ) -> void:
-	if status_controller == null:
-		return
-	var target_status := _get_target_status_controller(target)
-	if target_status == null:
-		return
-
-	var support_bonus: float = support_mods.get("status_chance_bonus", 0.0)
-	var total: float = maxf(damage_result.total_damage, 1.0)
-	var rolls := _build_status_rolls(damage_result)
-	for roll in rolls:
-		_try_apply_status_roll(roll, support_bonus, total, target_status)
-
+	_status_service.try_apply_status_on_hit(self, target, damage_result, support_mods)
 
 func _calculate_final_received_damage(damage_result: DamageCalculator.DamageResult) -> float:
-	var final_damage := DamageCalculator.calculate_received_damage(stats, damage_result)
-	if status_controller:
-		final_damage *= status_controller.get_damage_taken_multiplier()
-	return final_damage
-
+	return _health_service.calculate_final_received_damage(self, damage_result)
 
 func _apply_damage_to_health(amount: float) -> void:
-	current_hp -= amount
-	_emit_health_changed()
-
+	_health_service.apply_damage_to_health(self, amount)
 
 func _apply_life_steal_on_hit(final_damage: float) -> void:
-	var life_steal := stats.get_stat(StatTypes.Stat.LIFE_STEAL)
-	if life_steal > 0.0:
-		heal(final_damage * life_steal)
-
+	_health_service.apply_life_steal_on_hit(self, final_damage)
 
 func _clamp_health_after_stats_changed() -> void:
-	var max_hp := stats.get_stat(StatTypes.Stat.HP)
-	current_hp = minf(current_hp, max_hp)
-	_emit_health_changed()
-
+	_health_service.clamp_health_after_stats_changed(self)
 
 func _update_pickup_area_radius() -> void:
-	var range_bonus := stats.get_stat(StatTypes.Stat.PICKUP_RANGE)
-	var final_range := pickup_range * (1.0 + range_bonus)
-	if pickup_area and pickup_area.has_node("CollisionShape2D"):
-		var shape: CollisionShape2D = pickup_area.get_node("CollisionShape2D")
-		if shape.shape is CircleShape2D:
-			shape.shape.radius = final_range
+	_runtime_state_service.update_pickup_area_radius(self)
 
 
 func _get_target_status_controller(target: Node) -> StatusController:
-	if target == null or not is_instance_valid(target):
-		return null
-	if not target.has_method("get_status_controller"):
-		return null
-	return target.get_status_controller() as StatusController
-
+	return _status_service.get_target_status_controller(target)
 
 func _build_status_rolls(damage_result: DamageCalculator.DamageResult) -> Array[Dictionary]:
-	return [
-		{
-			"status_type": "burn",
-			"source_damage": damage_result.fire_damage,
-			"base_chance": Constants.BURN_BASE_CHANCE,
-			"stat_type": StatTypes.Stat.BURN_CHANCE,
-		},
-		{
-			"status_type": "freeze",
-			"source_damage": damage_result.ice_damage,
-			"base_chance": Constants.FREEZE_BASE_CHANCE,
-			"stat_type": StatTypes.Stat.FREEZE_CHANCE,
-		},
-		{
-			"status_type": "shock",
-			"source_damage": damage_result.lightning_damage,
-			"base_chance": Constants.SHOCK_BASE_CHANCE,
-			"stat_type": StatTypes.Stat.SHOCK_CHANCE,
-		},
-		{
-			"status_type": "bleed",
-			"source_damage": damage_result.physical_damage,
-			"base_chance": Constants.BLEED_BASE_CHANCE,
-			"stat_type": StatTypes.Stat.BLEED_CHANCE,
-		},
-	]
-
+	return _status_service.build_status_rolls(damage_result)
 
 func _try_apply_status_roll(
 	roll: Dictionary,
@@ -1387,15 +649,7 @@ func _try_apply_status_roll(
 	total_damage: float,
 	target_status: StatusController
 ) -> void:
-	var source_damage := float(roll.get("source_damage", 0.0))
-	if source_damage <= 0.0:
-		return
-	var status_type := str(roll.get("status_type", ""))
-	var base_chance := float(roll.get("base_chance", 0.0))
-	var stat_type: StatTypes.Stat = int(roll.get("stat_type", StatTypes.Stat.BURN_CHANCE))
-	var bonus := support_bonus + _get_skill_status_bonus(status_type)
-	_try_apply(status_type, base_chance, stat_type, bonus, source_damage, total_damage, target_status)
-
+	_status_service.try_apply_status_roll(self, roll, support_bonus, total_damage, target_status)
 
 func _try_apply(
 	status_type: String,
@@ -1406,28 +660,22 @@ func _try_apply(
 	total_damage: float,
 	target_status: StatusController
 ) -> void:
-	var portion := clampf(source_damage / maxf(total_damage, 1.0), 0.1, 1.0)
-	var chance := (base_chance + stats.get_stat(stat_type) + bonus) * portion
-	if randf() < chance:
-		target_status.apply_status(status_type, source_damage, stats)
-
+	_status_service.try_apply(
+		self,
+		status_type,
+		base_chance,
+		stat_type,
+		bonus,
+		source_damage,
+		total_damage,
+		target_status
+	)
 
 func _try_apply_knockback_on_hit(target: Node, support_mods: Dictionary) -> void:
-	if target == null or not is_instance_valid(target):
-		return
-	if not target.has_method("apply_knockback"):
-		return
-	var force := float(support_mods.get("knockback_force", 0.0))
-	if force <= 0.0:
-		return
-	target.apply_knockback(global_position, force)
-
+	_status_service.try_apply_knockback_on_hit(self, target, support_mods)
 
 func _get_skill_status_bonus(status_type: String) -> float:
-	if gem_link == null or gem_link.skill_gem == null:
-		return 0.0
-	return gem_link.skill_gem.get_status_chance_bonus_for(status_type)
-
+	return _status_service.get_skill_status_bonus(self, status_type)
 
 func get_status_controller() -> StatusController:
 	return status_controller
@@ -1436,304 +684,111 @@ func get_status_controller() -> StatusController:
 # ===== Respawn =====
 
 func respawn() -> void:
-	is_dead = false
-	_direct_hit_grace_remaining = 0.0
-	current_hp = stats.get_stat(StatTypes.Stat.HP)
-	_emit_health_changed()
+	_runtime_state_service.respawn(self)
 
 
 
 func add_module_to_inventory(module: Module) -> bool:
-	if module == null:
-		return false
-	if module_inventory.size() >= MAX_MODULE_INVENTORY:
-		return false
-	module_inventory.append(module)
-	return true
+	return _module_service.add_module_to_inventory(self, module)
 
 
 func remove_module_from_inventory(index: int) -> Module:
-	if index < 0 or index >= module_inventory.size():
-		return null
-	var module: Module = module_inventory[index]
-	module_inventory.remove_at(index)
-	return module
+	return _module_service.remove_module_from_inventory(self, index)
 
 
 func equip_module_from_inventory(index: int) -> bool:
-	var module := remove_module_from_inventory(index)
-	if module == null:
-		return false
-	if not core_board.equip(module, stats):
-		module_inventory.insert(index, module)
-		return false
-	var slot_index := core_board.slots.find(module)
-	if slot_index >= 0:
-		_emit_event_bus("module_changed", [slot_index, null, module])
-	return true
+	return _module_service.equip_module_from_inventory(self, index)
 
 
 func equip_module_direct(module: Module) -> int:
-	if module == null or core_board == null or stats == null:
-		return -1
-	if not core_board.equip(module, stats):
-		return -1
-	var slot_index := core_board.slots.find(module)
-	if slot_index >= 0:
-		_emit_event_bus("module_changed", [slot_index, null, module])
-	return slot_index
+	return _module_service.equip_module_direct(self, module)
 
 
 func unequip_module_to_inventory(slot_index: int) -> bool:
-	if slot_index < 0 or slot_index >= core_board.slots.size():
-		return false
-	var module: Module = core_board.slots[slot_index]
-	if module_inventory.size() >= MAX_MODULE_INVENTORY:
-		return false
-	core_board.unequip(module, stats)
-	module_inventory.append(module)
-	_emit_event_bus("module_changed", [slot_index, module, null])
-	return true
-
+	return _module_service.unequip_module_to_inventory(self, slot_index)
 
 func can_snapshot_build() -> bool:
 	return core_board != null and gem_link != null and stats != null
 
 
 func has_equipment_in_inventory(item: EquipmentData) -> bool:
-	if item == null:
-		return false
-	for inv_item in inventory:
-		if inv_item == item:
-			return true
-	return false
+	return _build_query_service.has_equipment_in_inventory(self, item)
 
 
 func has_equipment_with_id(id: String) -> bool:
-	if id == "":
-		return false
-	for slot_id in EQUIPMENT_SLOT_ORDER:
-		var equipped_item: EquipmentData = get_equipped(slot_id)
-		if equipped_item != null and equipped_item.id == id:
-			return true
-	for inv_item in inventory:
-		if inv_item != null and inv_item.id == id:
-			return true
-	return false
+	return _build_query_service.has_equipment_with_id(self, id)
 
 
 func is_equipment_equipped(item: EquipmentData) -> bool:
-	if item == null:
-		return false
-	for slot_id in EQUIPMENT_SLOT_ORDER:
-		if get_equipped(slot_id) == item:
-			return true
-	return false
+	return _build_query_service.is_equipment_equipped(self, item)
 
 
 func is_skill_gem_equipped(item: SkillGem) -> bool:
-	return item != null and gem_link != null and gem_link.skill_gem == item
+	return _build_query_service.is_skill_gem_equipped(self, item)
 
 
 func has_skill_gem_in_inventory(item: SkillGem) -> bool:
-	if item == null:
-		return false
-	for gem in skill_gem_inventory:
-		if gem == item:
-			return true
-	return false
+	return _build_query_service.has_skill_gem_in_inventory(self, item)
 
 
 func has_skill_gem_with_id(id: String) -> bool:
-	if id == "":
-		return false
-	if gem_link != null and gem_link.skill_gem != null and gem_link.skill_gem.id == id:
-		return true
-	for gem in skill_gem_inventory:
-		if gem != null and gem.id == id:
-			return true
-	return false
+	return _build_query_service.has_skill_gem_with_id(self, id)
 
 
 func is_support_gem_equipped(item: SupportGem) -> bool:
-	if item == null or gem_link == null:
-		return false
-	for gem in gem_link.support_gems:
-		if gem == item:
-			return true
-	return false
+	return _build_query_service.is_support_gem_equipped(self, item)
 
 
 func has_support_gem_in_inventory(item: SupportGem) -> bool:
-	if item == null:
-		return false
-	for gem in support_gem_inventory:
-		if gem == item:
-			return true
-	return false
+	return _build_query_service.has_support_gem_in_inventory(self, item)
 
 
 func has_support_gem_with_id(id: String) -> bool:
-	if id == "":
-		return false
-	if gem_link != null:
-		for gem in gem_link.support_gems:
-			if gem != null and gem.id == id:
-				return true
-	for gem in support_gem_inventory:
-		if gem != null and gem.id == id:
-			return true
-	return false
+	return _build_query_service.has_support_gem_with_id(self, id)
 
 
 func is_module_equipped(item: Module) -> bool:
-	if item == null or core_board == null:
-		return false
-	for mod in core_board.slots:
-		if mod == item:
-			return true
-	return false
+	return _build_query_service.is_module_equipped(self, item)
 
 
 func has_module_in_inventory(item: Module) -> bool:
-	if item == null:
-		return false
-	for mod in module_inventory:
-		if mod == item:
-			return true
-	return false
+	return _build_query_service.has_module_in_inventory(self, item)
 
 
 func has_module_with_id(id: String) -> bool:
-	if id == "":
-		return false
-	if core_board != null:
-		for mod in core_board.slots:
-			if mod != null and mod.id == id:
-				return true
-	for mod in module_inventory:
-		if mod != null and mod.id == id:
-			return true
-	return false
+	return _build_query_service.has_module_with_id(self, id)
 
 
 func remove_equipment_reference(target: EquipmentData) -> void:
-	if target == null:
-		return
-	for i in range(inventory.size() - 1, -1, -1):
-		if inventory[i] == target:
-			inventory.remove_at(i)
-			return
-	for slot_id in EQUIPMENT_SLOT_ORDER:
-		if get_equipped(slot_id) == target:
-			unequip(slot_id)
-			return
+	_build_query_service.remove_equipment_reference(self, target)
 
 
 func remove_skill_gem_reference(target: SkillGem) -> void:
-	if target == null:
-		return
-	if gem_link != null and gem_link.skill_gem == target:
-		gem_link.set_skill_gem(null)
-		return
-	for i in range(skill_gem_inventory.size() - 1, -1, -1):
-		if get_skill_gem_in_inventory(i) == target:
-			remove_skill_gem_from_inventory(i)
-			return
+	_build_query_service.remove_skill_gem_reference(self, target)
 
 
 func remove_support_gem_reference(target: SupportGem) -> void:
-	if target == null:
-		return
-	if gem_link != null:
-		for i in range(gem_link.support_gems.size()):
-			if gem_link.support_gems[i] == target:
-				gem_link.set_support_gem(i, null)
-				return
-	for i in range(support_gem_inventory.size() - 1, -1, -1):
-		if get_support_gem_in_inventory(i) == target:
-			remove_support_gem_from_inventory(i)
-			return
+	_build_query_service.remove_support_gem_reference(self, target)
 
 
 func remove_module_reference(target: Module) -> void:
-	if target == null:
-		return
-	for i in range(module_inventory.size() - 1, -1, -1):
-		if module_inventory[i] == target:
-			remove_module_from_inventory(i)
-			return
-	if core_board != null and stats != null:
-		for i in range(core_board.slots.size() - 1, -1, -1):
-			if core_board.slots[i] == target:
-				core_board.unequip_at(i, stats)
-				return
+	_build_query_service.remove_module_reference(self, target)
 
 
 func capture_build_snapshot() -> Dictionary:
-	if not can_snapshot_build():
-		return {}
-	var state := PlayerState.new()
-	state.capture_from_player(self)
-	return state.to_snapshot()
+	return _build_query_service.capture_build_snapshot(self)
 
 
 func apply_build_snapshot(snapshot: Dictionary) -> void:
-	if snapshot.is_empty() or not can_snapshot_build():
-		return
-	var state := PlayerState.new()
-	state.load_snapshot(snapshot)
-	state.apply_to_player(self)
+	_build_query_service.apply_build_snapshot(self, snapshot)
 
 
 func clear_build_state() -> void:
-	if not can_snapshot_build():
-		return
-	for slot_id in EQUIPMENT_SLOT_ORDER:
-		unequip(slot_id)
-	inventory.clear()
-	skill_gem_inventory.clear()
-	support_gem_inventory.clear()
-	gem_link.set_skill_gem(null)
-	gem_link.support_gems.clear()
-	while core_board.slots.size() > 0:
-		core_board.unequip_at(0, stats)
-	module_inventory.clear()
-
+	_build_query_service.clear_build_state(self)
 
 func _emit_event_bus(signal_name: StringName, args: Array = []) -> void:
-	var event_bus: Variant = _get_event_bus()
-	if event_bus == null:
-		return
-	var parameters: Array = [signal_name]
-	parameters.append_array(args)
-	event_bus.callv("emit_signal", parameters)
+	_runtime_bridge.emit_event_bus(self, signal_name, args)
 
 
 func _set_stash_material_count(material_id: String, count: int) -> void:
-	var game_manager: Variant = _get_game_manager()
-	if game_manager == null:
-		return
-	game_manager.call("set_stash_material_count", material_id, count)
-
-
-func _get_event_bus() -> Variant:
-	var tree: SceneTree = null
-	if is_inside_tree():
-		tree = get_tree()
-	else:
-		tree = Engine.get_main_loop() as SceneTree
-	if tree == null or tree.root == null:
-		return null
-	return tree.root.get_node_or_null(^"/root/EventBus")
-
-
-func _get_game_manager() -> Variant:
-	var tree: SceneTree = null
-	if is_inside_tree():
-		tree = get_tree()
-	else:
-		tree = Engine.get_main_loop() as SceneTree
-	if tree == null or tree.root == null:
-		return null
-	return tree.root.get_node_or_null(^"/root/GameManager")
+	_runtime_bridge.set_stash_material_count(self, material_id, count)
