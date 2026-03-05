@@ -21,7 +21,7 @@ func apply_status(
 	source_damage: float,
 	attacker_stats: StatContainer
 ) -> void:
-	var effect := _build_effect(status_type, source_damage, attacker_stats)
+	var effect: StatusEffect = _build_effect(status_type, source_damage, attacker_stats)
 	if effect == null:
 		return
 
@@ -47,8 +47,8 @@ func _process(delta: float) -> void:
 		effect.tick_elapsed += delta
 
 		if effect.tick_interval > 0.0 and effect.tick_elapsed >= effect.tick_interval:
-			var ticks := int(effect.tick_elapsed / effect.tick_interval)
-			effect.tick_elapsed -= ticks * effect.tick_interval
+			var ticks: int = int(effect.tick_elapsed / effect.tick_interval)
+			effect.tick_elapsed -= float(ticks) * effect.tick_interval
 			_apply_tick(effect, ticks)
 
 		if effect.elapsed >= effect.duration:
@@ -76,29 +76,29 @@ func _build_effect(
 	source_damage: float,
 	attacker_stats: StatContainer
 ) -> StatusEffect:
-	var effect := StatusEffect.new()
+	var effect: StatusEffect = StatusEffect.new()
 	effect.status_type = status_type
 
 	match status_type:
 		"burn":
-			var bonus := attacker_stats.get_stat(StatTypes.Stat.BURN_DMG_BONUS)
+			var bonus: float = attacker_stats.get_stat(StatTypes.Stat.BURN_DMG_BONUS)
 			effect.duration = Constants.BURN_DURATION
 			effect.tick_interval = 1.0
 			effect.magnitude = source_damage * Constants.BURN_BASE_MULTIPLIER * (1.0 + bonus)
 		"bleed":
-			var bonus2 := attacker_stats.get_stat(StatTypes.Stat.BLEED_DMG_BONUS)
+			var bonus2: float = attacker_stats.get_stat(StatTypes.Stat.BLEED_DMG_BONUS)
 			effect.duration = Constants.BLEED_DURATION
 			effect.tick_interval = 1.0
 			effect.magnitude = source_damage * Constants.BLEED_BASE_MULTIPLIER * (1.0 + bonus2)
 		"freeze":
-			var bonus3 := attacker_stats.get_stat(StatTypes.Stat.FREEZE_DURATION_BONUS)
-			var duration := Constants.FREEZE_BASE_DURATION * (1.0 + bonus3)
+			var bonus3: float = attacker_stats.get_stat(StatTypes.Stat.FREEZE_DURATION_BONUS)
+			var duration: float = Constants.FREEZE_BASE_DURATION * (1.0 + bonus3)
 			effect.duration = minf(duration, Constants.FREEZE_MAX_DURATION)
 			effect.tick_interval = 0.0
 			effect.magnitude = 0.0
 		"shock":
-			var bonus4 := attacker_stats.get_stat(StatTypes.Stat.SHOCK_EFFECT_BONUS)
-			var shock_bonus := Constants.SHOCK_BASE_BONUS + bonus4
+			var bonus4: float = attacker_stats.get_stat(StatTypes.Stat.SHOCK_EFFECT_BONUS)
+			var shock_bonus: float = Constants.SHOCK_BASE_BONUS + bonus4
 			shock_bonus = minf(shock_bonus, Constants.SHOCK_MAX_BONUS)
 			effect.duration = Constants.SHOCK_DURATION
 			effect.tick_interval = 0.0
@@ -113,13 +113,16 @@ func _apply_tick(effect: StatusEffect, ticks: int) -> void:
 	if effect.magnitude <= 0.0:
 		return
 
-	var total_damage := effect.magnitude * ticks
+	var total_damage: float = effect.magnitude * float(ticks)
 	match effect.status_type:
 		"burn":
 			_apply_dot_damage(total_damage, StatTypes.Element.FIRE, effect.status_type)
 		"bleed":
-			if _is_owner_moving():
-				_apply_dot_damage(total_damage, StatTypes.Element.PHYSICAL, effect.status_type)
+			var bleed_damage: float = total_damage
+			if not _is_owner_moving():
+				bleed_damage *= Constants.BLEED_STATIONARY_MULTIPLIER
+			if bleed_damage > 0.0:
+				_apply_dot_damage(bleed_damage, StatTypes.Element.PHYSICAL, effect.status_type)
 
 
 func _apply_dot_damage(amount: float, element: StatTypes.Element, status_type: String) -> void:
@@ -163,7 +166,7 @@ func _emit_event_bus(signal_name: StringName, args: Array = []) -> void:
 
 
 func _get_event_bus() -> Variant:
-	var tree := get_tree()
+	var tree: SceneTree = get_tree()
 	if tree == null or tree.root == null:
 		return null
 	return tree.root.get_node_or_null(^"/root/EventBus")

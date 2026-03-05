@@ -30,10 +30,10 @@ const BASE_LOAD_CAPACITY := 100
 const MAX_MODULE_INVENTORY := 40
 
 # Status application chances
-const BURN_BASE_CHANCE := 0.20
-const FREEZE_BASE_CHANCE := 0.15
-const SHOCK_BASE_CHANCE := 0.20
-const BLEED_BASE_CHANCE := 0.25
+const BURN_BASE_CHANCE := 0.0
+const FREEZE_BASE_CHANCE := 0.0
+const SHOCK_BASE_CHANCE := 0.0
+const BLEED_BASE_CHANCE := 0.0
 
 # Status durations
 const BURN_DURATION := 3.0
@@ -45,5 +45,6 @@ const BLEED_DURATION := 5.0
 # Status effect multipliers
 const BURN_BASE_MULTIPLIER := 0.5
 const BLEED_BASE_MULTIPLIER := 0.4
+const BLEED_STATIONARY_MULTIPLIER := 0.35
 const SHOCK_BASE_BONUS := 0.2
 const SHOCK_MAX_BONUS := 0.5

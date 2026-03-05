@@ -73,6 +73,7 @@ var _telegraph_locked_distance: float = 0.0
 var _external_velocity: Vector2 = Vector2.ZERO
 var _rank_ring: Line2D = null
 var _rank_label: Label = null
+var _status_ring: Line2D = null
 
 @onready var sprite: Sprite2D = $Sprite2D
 @onready var collision: CollisionShape2D = $CollisionShape2D
@@ -110,6 +111,8 @@ func _physics_process(delta: float) -> void:
 		_find_player()
 		if target == null or not is_instance_valid(target):
 			return
+
+	_update_status_indicator()
 
 	if status_controller != null and status_controller.is_frozen():
 		velocity = Vector2.ZERO
@@ -312,6 +315,7 @@ func _die() -> void:
 
 	died.emit(self)
 	EventBus.enemy_died.emit(self, global_position)
+	_clear_status_ring()
 
 	if sprite != null:
 		var tween := create_tween()
@@ -973,6 +977,72 @@ func _clear_rank_label() -> void:
 	if _rank_label != null:
 		_rank_label.queue_free()
 		_rank_label = null
+
+func _update_status_indicator() -> void:
+	if _is_dead:
+		_clear_status_ring()
+		return
+	if status_controller == null:
+		_clear_status_ring()
+		return
+	if status_controller.active.is_empty():
+		_clear_status_ring()
+		return
+
+	var dominant_status: String = _get_dominant_status_type(status_controller.active)
+	if dominant_status.is_empty():
+		_clear_status_ring()
+		return
+
+	var radius: float = _get_body_radius(self) + 9.0
+	var color: Color = _status_ring_color(dominant_status)
+	_ensure_status_ring(color, radius)
+
+
+func _ensure_status_ring(color: Color, radius: float) -> void:
+	if _status_ring == null:
+		_status_ring = Line2D.new()
+		_status_ring.z_index = 2
+		_status_ring.width = 2.4
+		add_child(_status_ring)
+	_status_ring.clear_points()
+	var points: int = 28
+	for i in range(points + 1):
+		var t: float = TAU * float(i) / float(points)
+		_status_ring.add_point(Vector2(cos(t), sin(t)) * radius)
+	_status_ring.default_color = color
+
+
+func _clear_status_ring() -> void:
+	if _status_ring != null:
+		_status_ring.queue_free()
+		_status_ring = null
+
+
+func _get_dominant_status_type(active_statuses: Dictionary) -> String:
+	var order: Array[String] = ["freeze", "shock", "burn", "bleed"]
+	for status_name in order:
+		if active_statuses.has(status_name):
+			return status_name
+	for key in active_statuses.keys():
+		var fallback: String = str(key)
+		if not fallback.is_empty():
+			return fallback
+	return ""
+
+
+func _status_ring_color(status_type: String) -> Color:
+	match status_type:
+		"burn":
+			return Color(1.0, 0.5, 0.2, 0.95)
+		"freeze":
+			return Color(0.55, 0.9, 1.0, 0.98)
+		"shock":
+			return Color(1.0, 0.95, 0.42, 0.98)
+		"bleed":
+			return Color(1.0, 0.32, 0.32, 0.95)
+		_:
+			return Color(1.0, 1.0, 1.0, 0.9)
 
 
 func _get_special_attempt_distance() -> float:

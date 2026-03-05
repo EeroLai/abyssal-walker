@@ -31,6 +31,8 @@ func start_floor(
 		config
 	)
 	config = BEACON_MODIFIER_SYSTEM.apply_floor_config_modifiers(config, GameManager.get_modifier_ids())
+	config = BEACON_MODIFIER_SYSTEM.apply_floor_event(config)
+	_announce_floor_event(config)
 
 	enemy_spawner.setup(config, player)
 	enemy_spawner.set_floor_number(floor_number)
@@ -38,3 +40,14 @@ func start_floor(
 	enemy_spawner.spawn_wave()
 
 	progression_service.activate_floor()
+
+
+func _announce_floor_event(config: Dictionary) -> void:
+	var event_name: String = str(config.get("active_floor_event_name", ""))
+	if event_name.is_empty():
+		return
+	var event_summary: String = str(config.get("active_floor_event_summary", ""))
+	var message: String = "Floor Event: %s" % event_name
+	if not event_summary.is_empty():
+		message += " - %s" % event_summary
+	EventBus.notification_requested.emit(message, "warning")

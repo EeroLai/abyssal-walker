@@ -8,6 +8,7 @@ var support_gems: Dictionary = {}      # id -> support gem definition
 var enemy_data: Dictionary = {}        # id -> enemy definition
 var elite_affixes: Dictionary = {}     # id -> elite affix definition
 var floor_data: Dictionary = {}        # floor_number -> floor config
+var floor_events: Dictionary = {}      # id -> floor event definition
 var beacon_modifiers: Dictionary = {}  # id -> abyss beacon modifier definition
 var beacon_templates: Dictionary = {}  # abyss beacon generation templates and pools
 var crafting_materials: Dictionary = {}  # id -> crafting material definition
@@ -33,6 +34,7 @@ func load_all_data() -> void:
 	_load_enemy_data()
 	_load_elite_affixes()
 	_load_floor_data()
+	_load_floor_events()
 	_load_beacon_modifiers()
 	_load_beacon_templates()
 
@@ -94,6 +96,10 @@ func _load_elite_affixes() -> void:
 func _load_floor_data() -> void:
 	var path := "res://data/abyss/floors.json"
 	floor_data = _load_json(path)
+
+func _load_floor_events() -> void:
+	var path := "res://data/abyss/floor_events.json"
+	floor_events = _load_json(path)
 
 
 func _load_beacon_modifiers() -> void:
@@ -339,6 +345,12 @@ func get_floor_config(floor_number: int) -> Dictionary:
 
 func get_beacon_modifier_data(id: String) -> Dictionary:
 	return beacon_modifiers.get(id, {})
+
+func get_floor_event_data(id: String) -> Dictionary:
+	return floor_events.get(id, {})
+
+func get_all_floor_event_ids() -> Array[String]:
+	return _collect_ids(floor_events)
 
 
 func get_all_beacon_modifier_ids() -> Array[String]:

@@ -102,6 +102,7 @@ func _setup_panels() -> void:
 
 func _connect_signals() -> void:
 	EventBus.damage_dealt.connect(_on_damage_dealt)
+	EventBus.status_tick.connect(_on_status_tick)
 	EventBus.player_died.connect(_on_player_died)
 	EventBus.enemy_died.connect(_on_enemy_died)
 	if hud:
@@ -242,6 +243,41 @@ func _on_damage_dealt(source: Node, target: Node, damage_info: Dictionary) -> vo
 	if is_crit and source == player and _is_player_melee_context():
 		_play_crit_camera_shake()
 
+
+func _on_status_tick(target: Node, status_type: String, damage: float) -> void:
+	if target == null or not is_instance_valid(target):
+		return
+	if damage_number_scene == null:
+		return
+	if damage <= 0.0:
+		return
+
+	var target_pos: Vector2 = Vector2.ZERO
+	if target is Node2D:
+		target_pos = (target as Node2D).global_position + Vector2(0, -26)
+
+	var element: StatTypes.Element = _status_type_to_element(status_type)
+	var dmg_node: Node = damage_number_scene.instantiate()
+	var dmg_num: DamageNumber = dmg_node as DamageNumber
+	if dmg_num == null:
+		return
+	dmg_num.global_position = target_pos
+	dmg_num.setup(damage, false, element, true, status_type)
+	add_child(dmg_num)
+
+
+func _status_type_to_element(status_type: String) -> StatTypes.Element:
+	match status_type:
+		"burn":
+			return StatTypes.Element.FIRE
+		"freeze":
+			return StatTypes.Element.ICE
+		"shock":
+			return StatTypes.Element.LIGHTNING
+		"bleed":
+			return StatTypes.Element.PHYSICAL
+		_:
+			return StatTypes.Element.PHYSICAL
 
 func _play_crit_camera_shake() -> void:
 	if player == null:
