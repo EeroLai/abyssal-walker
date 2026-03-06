@@ -146,6 +146,10 @@
   "ui.stat.life_steal": "Life Steal",
   "ui.stat.life_regen": "Life Regen",
   "ui.stat.resistances": "Fire/Ice/Lightning Res",
+  "ui.stat.fire_res": "Fire Resistance",
+  "ui.stat.ice_res": "Cold Resistance",
+  "ui.stat.lightning_res": "Lightning Resistance",
+  "ui.stat.all_res": "All Resistances",
   "ui.stat.status_chance": "Burn/Freeze/Shock/Bleed Chance",
 
   "ui.crafting.no_selection": "No equipment selected",

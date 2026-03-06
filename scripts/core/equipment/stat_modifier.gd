@@ -76,7 +76,7 @@ func _get_stat_name() -> String:
 		StatTypes.Stat.ICE_DMG: return "冰霜傷害"
 		StatTypes.Stat.LIGHTNING_DMG: return "閃電傷害"
 		StatTypes.Stat.FIRE_RES: return "火焰抗性"
-		StatTypes.Stat.ICE_RES: return "冰霜抗性"
+		StatTypes.Stat.ICE_RES: return "冰冷抗性"
 		StatTypes.Stat.LIGHTNING_RES: return "閃電抗性"
 		StatTypes.Stat.ALL_RES: return "全部抗性"
 		StatTypes.Stat.BURN_CHANCE: return "燃燒機率"

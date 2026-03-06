@@ -10,6 +10,24 @@ This format is based on Keep a Changelog and uses simple sections:
 
 ## [Unreleased]
 
+## [2.9.1] - 2026-03-06
+
+### Added
+- Localization keys for elemental resistance stat names:
+  - `ui.stat.fire_res`
+  - `ui.stat.ice_res`
+  - `ui.stat.lightning_res`
+  - `ui.stat.all_res`
+
+### Changed
+- Traditional Chinese localization copy was normalized to reduce mixed English terminology across lobby, tutorial, guide, and boss HUD messages.
+- `ICE_RES` display wording was standardized to `冰冷抗性` in core stat modifier text output.
+
+### Fixed
+- Equipment affix/stat label mapping now resolves elemental resistances as separate stats (`火焰抗性`, `冰冷抗性`, `閃電抗性`) instead of collapsing all three to a shared generic resistance label.
+- Added missing `ALL_RES` stat label mapping so all-resistance affixes display localized text correctly.
+
+
 ## [2.9.0] - 2026-03-05
 
 ### Added
