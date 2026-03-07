@@ -2,7 +2,7 @@
 
 [English](README.md) | [繁體中文](README.zh-TW.md)
 
-`abyssal-walker` 是一個以 Godot 4 製作的動作 RPG 原型，核心循環建立在「深淵信標」驅動的冒險流程上：
+`abyssal-walker` 是一款以 Godot 4 製作的動作 RPG 原型，主軸是由「深淵信標」驅動、並聚焦高風險抽離抉擇的深淵探索循環：
 
 - 在大廳整理資源與配裝
 - 選擇一顆 `Abyss Beacon`

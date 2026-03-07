@@ -2,7 +2,7 @@
 
 [English](README.md) | [繁體中文](README.zh-TW.md)
 
-`abyssal-walker` is a Godot 4 action RPG prototype built around a beacon-driven abyss run loop:
+`abyssal-walker` is a Godot 4 action RPG prototype focused on beacon-driven abyss expeditions and high-risk extraction decisions:
 
 - Prepare in the lobby
 - Select an `Abyss Beacon`
