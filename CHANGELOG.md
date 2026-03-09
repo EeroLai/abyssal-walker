@@ -10,6 +10,23 @@ This format is based on Keep a Changelog and uses simple sections:
 
 ## [Unreleased]
 
+## [2.10.0] - 2026-03-09
+
+### Added
+- Added local save-game infrastructure via `SaveService` with atomic write flow (`.tmp` -> primary) and automatic backup rotation (`.bak`).
+- Added runtime debug save controls in debug builds:
+  - `F5`: manual save
+  - `F6`: manual load
+  - `F7`: clear local save files
+- Added snapshot persistence APIs for core run/build state services:
+  - `RunSessionService`
+  - `OperationInventoryService`
+  - `RunRecordsService`
+
+### Changed
+- `GameManager` now restores saved state on startup and persists run/build inventory state automatically at key milestones.
+- Added autosave debounce and immediate-save checkpoints for floor outcomes and run resolution.
+
 ## [2.9.1] - 2026-03-06
 
 ### Added
