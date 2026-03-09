@@ -38,6 +38,7 @@ const STARTER_STASH_MATERIALS: Dictionary = {
 	"augment": 30,
 	"refine": 20,
 }
+const SAVE_AUTOSAVE_DEBOUNCE_SEC: float = 0.8
 
 var _beacon_drop_service = BEACON_DROP_SERVICE.new()
 var _loot_filter_service = LOOT_FILTER_SERVICE.new()
@@ -70,6 +71,9 @@ var _query_service = RUN_QUERY_SERVICE.new(
 	_loot_filter_service
 )
 var _auto_move_enabled: bool = true
+var _save_dirty: bool = false
+var _save_countdown_sec: float = 0.0
+var _is_applying_save_snapshot: bool = false
 
 const LOOT_CATEGORY_EQUIPMENT := "equipment"
 const LOOT_CATEGORY_SKILL_GEM := "skill_gem"
@@ -81,12 +85,33 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_load_settings()
 	_connect_signals()
+	var has_existing_save: bool = _has_existing_save_file()
+	_restore_from_saved_data()
 	_ensure_starter_stash()
+	if not has_existing_save:
+		_request_save(true)
 
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
-		if event.is_action_pressed("pause"):
+		var key_event: InputEventKey = event as InputEventKey
+		if OS.is_debug_build():
+			if key_event.keycode == KEY_F5:
+				var saved: bool = save_game_now()
+				_emit_save_debug_notification("Manual save", saved)
+				get_viewport().set_input_as_handled()
+				return
+			if key_event.keycode == KEY_F6:
+				var loaded: bool = load_game_now()
+				_emit_save_debug_notification("Manual load", loaded)
+				get_viewport().set_input_as_handled()
+				return
+			if key_event.keycode == KEY_F7:
+				var cleared: bool = clear_save_data()
+				_emit_save_debug_notification("Manual clear", cleared)
+				get_viewport().set_input_as_handled()
+				return
+		if key_event.is_action_pressed("pause"):
 			toggle_pause()
 			get_viewport().set_input_as_handled()
 
@@ -100,11 +125,27 @@ func _connect_signals() -> void:
 	EventBus.skill_gem_changed.connect(_on_skill_gem_changed)
 	EventBus.support_gem_changed.connect(_on_support_gem_changed)
 	EventBus.module_changed.connect(_on_module_changed)
+	EventBus.operation_session_changed.connect(_on_operation_session_changed_for_save)
+	EventBus.beacon_inventory_changed.connect(_on_beacon_inventory_changed_for_save)
+	EventBus.floor_cleared.connect(_on_floor_cleared_for_save)
+	EventBus.floor_failed.connect(_on_floor_failed_for_save)
+	EventBus.crafting_completed.connect(_on_crafting_completed_for_save)
+	EventBus.run_extracted.connect(_on_run_extracted_for_save)
+	EventBus.run_failed.connect(_on_run_failed_for_save)
 
 
 func _process(delta: float) -> void:
 	if _runtime_service.current_state == GameState.PLAYING:
 		EventBus.dps_updated.emit(_command_service.advance_telemetry(delta))
+	if _save_dirty:
+		_save_countdown_sec = maxf(0.0, _save_countdown_sec - delta)
+		if _save_countdown_sec <= 0.0:
+			_flush_pending_save()
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		_flush_pending_save()
 
 
 func start_game() -> void:
@@ -294,6 +335,156 @@ func _save_auto_move_setting() -> void:
 func _ensure_starter_stash() -> void:
 	_command_service.ensure_starter_stash(STARTER_STASH_MATERIALS)
 
+
+func get_save_absolute_path() -> String:
+	var save_service: Node = _get_save_service()
+	if save_service == null:
+		return ""
+	return str(save_service.call("get_absolute_save_path"))
+
+
+func save_game_now() -> bool:
+	var saved: bool = _save_to_disk()
+	if saved:
+		_save_dirty = false
+		_save_countdown_sec = 0.0
+	return saved
+
+
+func load_game_now() -> bool:
+	var save_payload: Dictionary = _load_save_payload()
+	if save_payload.is_empty():
+		return false
+	var snapshot_value: Variant = save_payload.get("snapshot", {})
+	if not (snapshot_value is Dictionary):
+		return false
+	_apply_save_snapshot(snapshot_value as Dictionary)
+	_ensure_starter_stash()
+	_save_dirty = false
+	_save_countdown_sec = 0.0
+	return true
+
+
+func clear_save_data() -> bool:
+	var save_service: Node = _get_save_service()
+	if save_service == null:
+		return false
+	var cleared: bool = bool(save_service.call("clear_save"))
+	if not cleared:
+		return false
+	_save_dirty = false
+	_save_countdown_sec = 0.0
+	return true
+
+
+func _has_existing_save_file() -> bool:
+	var save_service: Node = _get_save_service()
+	if save_service == null:
+		return false
+	return bool(save_service.call("has_save"))
+
+
+func _restore_from_saved_data() -> void:
+	var save_payload: Dictionary = _load_save_payload()
+	if save_payload.is_empty():
+		return
+	var snapshot_value: Variant = save_payload.get("snapshot", {})
+	if not (snapshot_value is Dictionary):
+		return
+	_apply_save_snapshot(snapshot_value as Dictionary)
+	_save_dirty = false
+	_save_countdown_sec = 0.0
+
+
+func _load_save_payload() -> Dictionary:
+	var save_service: Node = _get_save_service()
+	if save_service == null:
+		return {}
+	var payload_value: Variant = save_service.call("load_game")
+	if payload_value is Dictionary:
+		return payload_value as Dictionary
+	return {}
+
+
+func _build_save_snapshot() -> Dictionary:
+	return {
+		"run_session": _run_session_service.to_snapshot(),
+		"inventory": _inventory_service.to_snapshot(),
+		"records": _run_records_service.to_snapshot(),
+	}
+
+
+func _apply_save_snapshot(snapshot: Dictionary) -> void:
+	if snapshot.is_empty():
+		return
+	_is_applying_save_snapshot = true
+	var run_session_value: Variant = snapshot.get("run_session", {})
+	if run_session_value is Dictionary:
+		_run_session_service.apply_snapshot(run_session_value as Dictionary)
+	var inventory_value: Variant = snapshot.get("inventory", {})
+	if inventory_value is Dictionary:
+		_inventory_service.apply_snapshot(inventory_value as Dictionary)
+	var records_value: Variant = snapshot.get("records", {})
+	if records_value is Dictionary:
+		_run_records_service.apply_snapshot(records_value as Dictionary)
+	_emit_operation_session_changed()
+	_emit_beacon_inventory_changed()
+	_is_applying_save_snapshot = false
+
+
+func _request_save(immediate: bool = false) -> void:
+	if _is_applying_save_snapshot:
+		return
+	if immediate:
+		_flush_pending_save()
+		return
+	_save_dirty = true
+	_save_countdown_sec = SAVE_AUTOSAVE_DEBOUNCE_SEC
+
+
+func _flush_pending_save() -> void:
+	if _is_applying_save_snapshot:
+		return
+	if _save_to_disk():
+		_save_dirty = false
+		_save_countdown_sec = 0.0
+
+
+func _save_to_disk() -> bool:
+	var save_service: Node = _get_save_service()
+	if save_service == null:
+		return false
+	var snapshot: Dictionary = _build_save_snapshot()
+	var saved: bool = bool(save_service.call("save_game", snapshot))
+	if not saved:
+		var error_message: String = str(save_service.call("get_last_error"))
+		if not error_message.is_empty():
+			push_warning("[GameManager] %s" % error_message)
+	return saved
+
+
+func _get_save_service() -> Node:
+	var tree: SceneTree = get_tree()
+	if tree == null or tree.root == null:
+		return null
+	return tree.root.get_node_or_null(^"/root/SaveService")
+
+
+func _emit_save_debug_notification(action: String, success: bool) -> void:
+	var message: String = ""
+	var notification_type: String = ""
+	if success:
+		var save_path: String = get_save_absolute_path()
+		if save_path.is_empty():
+			message = "%s complete." % action
+		else:
+			message = "%s complete: %s" % [action, save_path]
+	else:
+		message = "%s failed." % action
+		notification_type = "warning"
+	EventBus.notification_requested.emit(message, notification_type)
+
+
 func get_beacon_inventory_count() -> int:
 	return _query_service.get_beacon_inventory_count()
 
@@ -347,14 +538,17 @@ func apply_death_material_penalty(player: Player) -> Dictionary:
 
 func clear_run_backpack_loot() -> void:
 	_command_service.clear_run_backpack_loot()
+	_request_save()
 
 
 func clear_operation_loadout() -> void:
 	_command_service.clear_operation_loadout()
+	_request_save()
 
 
 func clear_operation_loot_ledger() -> void:
 	_command_service.clear_operation_loot_ledger()
+	_request_save()
 
 
 func has_persistent_player_build() -> bool:
@@ -363,14 +557,17 @@ func has_persistent_player_build() -> bool:
 
 func save_persistent_player_build_from_player(player: Player) -> void:
 	_command_service.save_persistent_player_build_from_player(player)
+	_request_save()
 
 
 func save_persistent_player_build_snapshot(snapshot: Dictionary) -> void:
 	_command_service.save_persistent_player_build_snapshot(snapshot)
+	_request_save()
 
 
 func apply_persistent_player_build_to_player(player: Player) -> void:
 	_command_service.apply_persistent_player_build_to_player(player)
+	_request_save()
 
 
 func get_persistent_player_build_snapshot() -> Dictionary:
@@ -406,39 +603,58 @@ func get_operation_loadout_snapshot() -> Dictionary:
 
 
 func move_stash_loot_to_loadout(category: String, index: int) -> bool:
-	return _command_service.move_stash_loot_to_loadout(category, index)
+	var moved: bool = _command_service.move_stash_loot_to_loadout(category, index)
+	if moved:
+		_request_save()
+	return moved
 
 
 func move_loadout_loot_to_stash(category: String, index: int) -> bool:
-	return _command_service.move_loadout_loot_to_stash(category, index)
+	var moved: bool = _command_service.move_loadout_loot_to_stash(category, index)
+	if moved:
+		_request_save()
+	return moved
 
 
 func take_stash_loot_item(category: String, index: int) -> Variant:
-	return _command_service.take_stash_loot_item(category, index)
+	var item: Variant = _command_service.take_stash_loot_item(category, index)
+	if item != null:
+		_request_save()
+	return item
 
 
 func add_loot_to_stash(item: Variant) -> bool:
-	return _command_service.add_loot_to_stash(item)
+	var added: bool = _command_service.add_loot_to_stash(item)
+	if added:
+		_request_save()
+	return added
 
 
 func apply_operation_loadout_to_player(player: Player) -> void:
 	_command_service.apply_operation_loadout_to_player(player)
+	_request_save()
 
 
 func deposit_run_backpack_loot_to_stash() -> Dictionary:
-	return _command_service.deposit_run_backpack_loot_to_stash()
+	var moved: Dictionary = _command_service.deposit_run_backpack_loot_to_stash()
+	_request_save(true)
+	return moved
 
 
 func lose_run_backpack_loot() -> Dictionary:
-	return _command_service.lose_run_backpack_loot()
+	var lost: Dictionary = _command_service.lose_run_backpack_loot()
+	_request_save(true)
+	return lost
 
 
 func resolve_operation_loadout_for_lobby(player: Player) -> void:
 	_command_service.resolve_operation_loadout_for_lobby(player)
+	_request_save()
 
 
 func resolve_operation_equipment_for_lobby(player: Player) -> void:
 	_command_service.resolve_operation_loadout_for_lobby(player)
+	_request_save()
 
 
 func get_last_run_extracted_summary() -> Dictionary:
@@ -455,6 +671,7 @@ func sync_player_materials_from_stash(player: Player) -> void:
 
 func set_stash_material_count(id: String, count: int) -> void:
 	_command_service.set_stash_material_count(id, count)
+	_request_save()
 
 
 func get_stash_material_count(id: String) -> int:
@@ -499,6 +716,36 @@ func get_loot_filter_name() -> String:
 
 func should_show_loot(item: Variant) -> bool:
 	return _query_service.should_show_loot(item)
+
+
+func _on_operation_session_changed_for_save(_summary: Dictionary) -> void:
+	_request_save()
+
+
+func _on_beacon_inventory_changed_for_save(_snapshot: Array) -> void:
+	_request_save()
+
+
+func _on_floor_cleared_for_save(_floor_number: int) -> void:
+	_request_save(true)
+
+
+func _on_floor_failed_for_save(_floor_number: int) -> void:
+	_request_save(true)
+
+
+func _on_crafting_completed_for_save(_equipment: EquipmentData, success: bool) -> void:
+	if not success:
+		return
+	_request_save()
+
+
+func _on_run_extracted_for_save(_summary: Dictionary) -> void:
+	_request_save(true)
+
+
+func _on_run_failed_for_save(_summary: Dictionary) -> void:
+	_request_save(true)
 
 
 func _on_damage_dealt(_source: Node, _target: Node, damage_info: Dictionary) -> void:

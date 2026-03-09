@@ -257,6 +257,31 @@ func get_stash_material_total() -> int:
 	return total
 
 
+func to_snapshot() -> Dictionary:
+	return {
+		"stash_materials": stash_materials.duplicate(true),
+		"stash_loot": _duplicate_loot_storage(stash_loot),
+		"run_backpack_loot": _duplicate_loot_storage(run_backpack_loot),
+		"operation_loadout": _duplicate_loot_storage(operation_loadout),
+		"operation_loot_ledger": _duplicate_operation_loot_ledger(operation_loot_ledger),
+	}
+
+
+func apply_snapshot(snapshot: Dictionary) -> void:
+	if snapshot.is_empty():
+		return
+
+	var stash_materials_value: Variant = snapshot.get("stash_materials", {})
+	if stash_materials_value is Dictionary:
+		stash_materials = (stash_materials_value as Dictionary).duplicate(true)
+	else:
+		stash_materials = {}
+
+	stash_loot = _load_loot_storage(snapshot.get("stash_loot", {}))
+	run_backpack_loot = _load_loot_storage(snapshot.get("run_backpack_loot", {}))
+	operation_loadout = _load_loot_storage(snapshot.get("operation_loadout", {}))
+	operation_loot_ledger = _load_operation_loot_ledger(snapshot.get("operation_loot_ledger", []))
+
 func _track_operation_loot(item: Variant, category: String, origin: String, state: String) -> void:
 	if item == null:
 		return
@@ -381,6 +406,43 @@ func _duplicate_loot_storage(storage: Dictionary) -> Dictionary:
 		STASH_KEY_MODULES: storage[STASH_KEY_MODULES].duplicate(true),
 	}
 
+
+func _load_loot_storage(value: Variant) -> Dictionary:
+	var loaded: Dictionary = _create_empty_loot_storage()
+	if not (value is Dictionary):
+		return loaded
+
+	var source: Dictionary = value as Dictionary
+	for key in [STASH_KEY_EQUIPMENT, STASH_KEY_SKILL_GEMS, STASH_KEY_SUPPORT_GEMS, STASH_KEY_MODULES]:
+		var entries_value: Variant = source.get(key, [])
+		if not (entries_value is Array):
+			continue
+		var entries: Array = entries_value as Array
+		var target: Array = loaded[key]
+		for item in entries:
+			var duplicated: Variant = _duplicate_loot_item(item)
+			if duplicated != null:
+				target.append(duplicated)
+	return loaded
+
+
+func _duplicate_operation_loot_ledger(source_value: Variant) -> Array[Dictionary]:
+	var cloned: Array[Dictionary] = []
+	if not (source_value is Array):
+		return cloned
+	var source: Array = source_value as Array
+	for record_value in source:
+		if not (record_value is Dictionary):
+			continue
+		var record: Dictionary = record_value as Dictionary
+		var cloned_record: Dictionary = record.duplicate(true)
+		cloned_record["item"] = _duplicate_loot_item(record.get("item", null))
+		cloned.append(cloned_record)
+	return cloned
+
+
+func _load_operation_loot_ledger(source_value: Variant) -> Array[Dictionary]:
+	return _duplicate_operation_loot_ledger(source_value)
 
 func _get_loot_counts(storage: Dictionary) -> Dictionary:
 	return {

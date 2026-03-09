@@ -21,6 +21,7 @@ config/icon="res://icon.svg"
 
 EventBus="*res://scripts/autoload/event_bus.gd"
 DataManager="*res://scripts/autoload/data_manager.gd"
+SaveService="*res://scripts/autoload/save_service.gd"
 GameManager="*res://scripts/autoload/game_manager.gd"
 LocalizationService="*res://scripts/autoload/localization_service.gd"
 TutorialService="*res://scripts/autoload/tutorial_service.gd"

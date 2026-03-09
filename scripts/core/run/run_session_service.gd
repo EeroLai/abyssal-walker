@@ -165,6 +165,53 @@ func add_beacon(beacon: Resource) -> void:
 	beacon_inventory.append(beacon.duplicate(true))
 
 
+func to_snapshot() -> Dictionary:
+	return {
+		"operation_session": operation_session.duplicate(true),
+		"beacon_inventory": get_beacon_inventory_snapshot(),
+	}
+
+
+func apply_snapshot(snapshot: Dictionary) -> void:
+	if snapshot.is_empty():
+		return
+
+	var operation_session_value: Variant = snapshot.get("operation_session", {})
+	if operation_session_value is Dictionary:
+		var loaded_session: Dictionary = _load_operation_session(operation_session_value as Dictionary)
+		if not loaded_session.is_empty():
+			operation_session = loaded_session
+
+	beacon_inventory.clear()
+	var beacon_inventory_value: Variant = snapshot.get("beacon_inventory", [])
+	if beacon_inventory_value is Array:
+		var beacon_list: Array = beacon_inventory_value as Array
+		for beacon_entry in beacon_list:
+			if beacon_entry is Resource:
+				beacon_inventory.append((beacon_entry as Resource).duplicate(true))
+
+
+func _load_operation_session(raw_session: Dictionary) -> Dictionary:
+	if raw_session.is_empty():
+		return {}
+
+	var base_difficulty: int = maxi(1, int(raw_session.get("base_difficulty", raw_session.get("operation_level", 1))))
+	var max_depth: int = maxi(1, int(raw_session.get("max_depth", _default_operation_max_depth)))
+	var operation_type: int = int(raw_session.get("operation_type", _default_operation_type))
+	var lives_max: int = maxi(1, int(raw_session.get("lives_max", _default_operation_lives)))
+	var lives_left: int = clampi(int(raw_session.get("lives_left", lives_max)), 0, lives_max)
+	var danger: int = maxi(0, int(raw_session.get("danger", 0)))
+
+	return {
+		"base_difficulty": base_difficulty,
+		"operation_level": base_difficulty,
+		"max_depth": max_depth,
+		"operation_type": operation_type,
+		"lives_max": lives_max,
+		"lives_left": lives_left,
+		"modifier_ids": _to_modifier_ids(raw_session.get("modifier_ids", PackedStringArray())),
+		"danger": danger,
+	}
 func _get_beacon_int(beacon: Resource, property_name: String, fallback: int) -> int:
 	var value: Variant = beacon.get(property_name)
 	if value == null:
