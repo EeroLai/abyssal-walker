@@ -12,7 +12,7 @@ config_version=5
 
 config/name="Abyssal Walker"
 config/description="2D 動作 RPG - 信標驅動的深淵探索撤離循環"
-config/version="2.10.0"
+config/version="2.10.1"
 run/main_scene="res://scenes/main/lobby.tscn"
 config/features=PackedStringArray("4.6", "GL Compatibility")
 config/icon="res://icon.svg"

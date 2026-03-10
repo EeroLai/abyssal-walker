@@ -10,6 +10,12 @@ This format is based on Keep a Changelog and uses simple sections:
 
 ## [Unreleased]
 
+## [2.10.1] - 2026-03-10
+
+### Fixed
+- Fixed equipment affix tooltip stat-name mapping so elemental damage affixes no longer show raw enum keys such as `LIGHTNING_DMG`.
+- Added missing localization keys for elemental damage, conversion, status bonus, and loot utility stats in both `ui_en.json` and `ui_zh_TW.json`.
+
 ## [2.10.0] - 2026-03-09
 
 ### Added
