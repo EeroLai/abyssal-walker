@@ -2,12 +2,7 @@
 
 [English](README.md) | [繁體中文](README.zh-TW.md)
 
-`abyssal-walker` is a Godot 4 action RPG prototype focused on beacon-driven abyss expeditions and high-risk extraction decisions:
-
-- Prepare in the lobby
-- Select an `Abyss Beacon`
-- Dive, loot, and manage danger
-- Extract rewards or lose run loot on failure
+`abyssal-walker` is a Godot `4.6` 2D action RPG prototype built around beacon-driven abyss runs and extraction-risk decisions.
 
 ## Gameplay Preview
 
@@ -23,82 +18,127 @@
   <img src="readme-assets/screenshot-crafting.png" alt="Crafting" width="31%" />
 </p>
 
-## Current Gameplay Loop
+## Version Snapshot
 
-1. Enter the `Lobby`
-2. Review stash resources and configure the operation loadout
-3. Select an `Abyss Beacon` from inventory
-4. If no beacon is available, start a `Baseline Dive`
-5. Enter the run with beacon-defined:
+- Project name: `Abyssal Walker`
+- Current in-project version: `2.10.1`
+- Default entry scene: `scenes/main/lobby.tscn`
+- Main run scene: `scenes/main/game.tscn`
+- Supported UI locales: `en`, `zh_TW`
+
+## Core Gameplay Loop
+
+1. Enter the `Lobby` and prepare your build.
+2. Move loot between stash and current build.
+3. Select an `Abyss Beacon` from inventory.
+4. If inventory is empty, start a `Baseline Dive` (no beacon cost).
+5. Start the run with beacon-defined parameters:
    - `base_difficulty`
    - `max_depth`
    - `lives_max`
    - `modifier_ids`
-6. Clear floors, build `danger`, and fight elites on the way down
-7. Decide whether to extract during extraction windows or push deeper
-8. Defeat the boss at the beacon's `max_depth`
-9. Bring rewards back to the lobby, or lose run backpack loot on failure
+6. Clear floors, raise `danger`, and handle elite/boss pressure.
+7. During extraction windows, choose:
+   - `[E]` extract and secure current run rewards
+   - `[F]` continue deeper for higher risk/reward
+8. Return to lobby:
+   - Extraction moves backpack loot into stash
+   - Failure loses run backpack loot
 
-## Core Systems
+## System Highlights
 
-- Lobby-driven preparation flow
-- Beacon inventory and consumption
-- `Baseline Dive` fallback when beacon inventory is empty
-- Beacon-generated runs with:
-  - template-based depth/life distributions
-  - data-driven modifiers
-  - boss-guaranteed beacon drops
-- Effective scaling based on:
-  - `base_difficulty + depth - 1 + danger`
-- Run risk inventory:
-  - `run_backpack_loot`
-- Persistent storage:
-  - `stash_loot`
-  - `stash_materials`
-- Loadout prep from stash before each run
-- Data-driven abyss content in:
+### Beacon-driven run generation
+
+- Beacons are consumed on activation.
+- Bosses always drop at least one beacon.
+- Normal/elite enemies can also drop beacons at lower rates.
+- Effective scaling uses:
+  - `effective_level = clamp(base_difficulty + depth - 1 + danger, 1, 100)`
+
+### Build preparation and stash flow
+
+- Lobby build prep supports:
+  - Equipment
+  - Skill Gems
+  - Support Gems
+  - Modules
+- Includes quick-equip, stash/loadout transfer, and loadout cleanup.
+- Crafting is lobby-side and uses stash materials.
+
+### Data-driven content
+
+- Abyss tables:
   - `data/abyss/floors.json`
+  - `data/abyss/floor_events.json`
   - `data/abyss/beacon_modifiers.json`
   - `data/abyss/beacon_templates.json`
+- Combat/build tables:
+  - `data/enemies/enemies.json`
+  - `data/enemies/elite_affixes.json`
+  - `data/equipment/*.json`
+  - `data/gems/*.json`
+  - `data/modules/modules.json`
+  - `data/affixes/*.json`
 
-## Beacon System
+### Localization
 
-- Beacons define the structure of each run instead of manual run parameter setup.
-- Standard beacon fields include:
-  - `base_difficulty`
-  - `max_depth`
-  - `lives_max`
-  - `modifier_ids`
-  - `template_id`
-- Beacons are consumed on activation.
-- Bosses always drop a beacon.
-- Normal and elite enemies can also drop beacons at lower rates.
-- Boss-only high-end templates can reach the deepest runs.
+- Runtime language switching in lobby (`en` / `zh_TW`).
+- Localization tables:
+  - `data/localization/ui_en.json`
+  - `data/localization/ui_zh_TW.json`
+
+### Save system
+
+- Local save flow with:
+  - atomic write (`.tmp` -> `.dat`)
+  - backup rotation (`.bak`)
+- Save files:
+  - `user://saves/save_slot_1.dat`
+  - `user://saves/save_slot_1.bak`
 
 ## Controls
 
+### In-run controls
+
+- `WASD` / Arrow Keys: Manual movement override
+- `V`: Toggle auto-move
 - `I`: Equipment panel
 - `K`: Skill panel
-- `C`: Crafting panel
 - `M`: Module panel
 - `Z`: Pickup nearby loot
 - `L`: Cycle loot filter
-- `E`: Confirm extraction / confirm summary return
+- `E`: Confirm extraction / confirm run-summary return
 - `F`: Continue during extraction window
 - `N`: Challenge pending failed floor
 - `Esc`: Pause
+- `Enter` / `Space`: Confirm run-summary return
 
-## Main Scenes
+### Debug build controls
 
-- Lobby: `scenes/main/lobby.tscn`
-- Game: `scenes/main/game.tscn`
+- `F5`: Manual save
+- `F6`: Manual load
+- `F7`: Clear local save files
+
+## Project Structure
+
+- `scenes/`: Main, UI, and gameplay scenes
+- `scripts/`: Autoloads, core systems, entities, and UI logic
+- `data/`: JSON gameplay tables and localization files
+- `assets/`, `resources/`: Art assets and reusable resources
+- `docs/`: Design and technical documents
+- `readme-assets/`: README screenshots and GIFs
 
 ## Quick Start
 
-1. Install Godot 4.x
-2. Open this project folder in Godot
-3. Run the project
-4. The project starts in the lobby
+1. Install Godot `4.6` (or another compatible `4.x` build).
+2. Open this folder as a project in Godot.
+3. Run the project.
+4. The game starts in the lobby scene.
+
+## Additional Docs
+
+- Beacon spec: `docs/abyss-beacon-spec.md`
+- Release history: `CHANGELOG.md`
 
 ## Changelog
 
