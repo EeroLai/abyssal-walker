@@ -125,7 +125,6 @@
 - `scripts/`：Autoload、核心系統、角色與 UI 邏輯
 - `data/`：JSON 遊戲資料與在地化表
 - `assets/`、`resources/`：美術資源與可重用資源
-- `docs/`：設計與技術文件
 - `readme-assets/`：README 使用的圖片與 GIF
 
 ## 快速開始
@@ -134,11 +133,6 @@
 2. 在 Godot 中開啟此專案資料夾。
 3. 執行專案。
 4. 遊戲會從大廳場景啟動。
-
-## 延伸文件
-
-- 信標規格：`docs/abyss-beacon-spec.md`
-- 版本歷史：`CHANGELOG.md`
 
 ## 變更紀錄
 

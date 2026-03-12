@@ -125,7 +125,6 @@
 - `scripts/`: Autoloads, core systems, entities, and UI logic
 - `data/`: JSON gameplay tables and localization files
 - `assets/`, `resources/`: Art assets and reusable resources
-- `docs/`: Design and technical documents
 - `readme-assets/`: README screenshots and GIFs
 
 ## Quick Start
@@ -134,11 +133,6 @@
 2. Open this folder as a project in Godot.
 3. Run the project.
 4. The game starts in the lobby scene.
-
-## Additional Docs
-
-- Beacon spec: `docs/abyss-beacon-spec.md`
-- Release history: `CHANGELOG.md`
 
 ## Changelog
 
